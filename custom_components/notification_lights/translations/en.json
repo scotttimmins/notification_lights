@@ -4,12 +4,53 @@
       "user": {
         "title": "Notification Lights",
         "description": "Optionally pick an entity that means quiet hours (e.g. a bedtime helper).",
-        "data": { "quiet_entity": "Quiet hours entity" }
+        "data": {
+          "quiet_entity": "Quiet hours entity"
+        }
       }
     },
     "abort": {
       "already_configured": "Notification Lights is already set up.",
       "aqara_missing": "Aqara Advanced Lighting is not set up. Install it through HACS (absent42/Aqara-Advanced-Lighting), add the integration, then try again."
+    }
+  },
+  "config_subentries": {
+    "light": {
+      "initiate_flow": {
+        "user": "Add notification light"
+      },
+      "entry_type": "Notification light",
+      "step": {
+        "user": {
+          "title": "Notification light",
+          "description": "Pick the ring (_rgb) entity of an Aqara ceiling light. Its room and floor come from Home Assistant.",
+          "data": {
+            "light": "Ring light",
+            "segments": "Segments",
+            "offset": "Offset (LEDs)",
+            "brightness": "Brightness",
+            "quiet_at_bedtime": "Hide normal notifications during quiet hours",
+            "idle_policy": "When nothing is showing"
+          },
+          "data_description": {
+            "offset": "Rotates the picture so a footprint starts at the same physical place on every light."
+          }
+        }
+      },
+      "error": {
+        "already_added": "This light is already added.",
+        "no_area": "Assign this light (or its device) to an area first.",
+        "offset_too_large": "Offset must be less than the number of segments."
+      },
+      "abort": {}
+    }
+  },
+  "selector": {
+    "idle_policy": {
+      "options": {
+        "off": "Turn the ring off",
+        "restore": "Restore its previous state"
+      }
     }
   }
 }
