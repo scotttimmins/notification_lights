@@ -11,7 +11,7 @@ The outer segmented ring of an Aqara ceiling light (T1M), exposed as its own `li
 _Avoid_: ring (informal only), accent LED, ceiling light (that is the whole fitting)
 
 **Notification scope**:
-Where a notification appears: one **room**, one **floor**, or the **whole house**, taken from the Home Assistant area and floor of each [[Notification light]]. Fixed when the notification is defined.
+Where a notification appears: one **room**, one **floor**, or the **whole house**. Fixed when the notification is defined. It shows on every [[Notification light]] that belongs to that room or floor; every light belongs to the whole house. A light belongs to one or more rooms and one floor, prefilled from its device and changeable per light.
 _Avoid_: rooms attribute
 
 **Notification footprint**:

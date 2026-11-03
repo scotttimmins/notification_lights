@@ -8,10 +8,12 @@ CONF_QUIET_ENTITY = "quiet_entity"
 SUBENTRY_LIGHT = "light"
 
 CONF_LIGHT = "light"
+CONF_AREAS = "areas"
+CONF_FLOOR = "floor"
 CONF_SEGMENTS = "segments"
 CONF_OFFSET = "offset"
 CONF_BRIGHTNESS = "brightness"
-CONF_QUIET_AT_BEDTIME = "quiet_at_bedtime"
+CONF_QUIET_HOURS = "quiet_hours"
 CONF_IDLE_POLICY = "idle_policy"
 
 IDLE_OFF = "off"

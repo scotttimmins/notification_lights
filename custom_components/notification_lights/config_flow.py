@@ -13,28 +13,32 @@ from homeassistant.config_entries import (
     ConfigSubentryFlow,
     SubentryFlowResult,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
     AQARA_DOMAIN,
+    CONF_AREAS,
     CONF_BRIGHTNESS,
+    CONF_FLOOR,
     CONF_IDLE_POLICY,
     CONF_LIGHT,
     CONF_OFFSET,
-    CONF_QUIET_AT_BEDTIME,
     CONF_QUIET_ENTITY,
+    CONF_QUIET_HOURS,
     CONF_SEGMENTS,
     DOMAIN,
     IDLE_OFF,
     IDLE_POLICIES,
     SUBENTRY_LIGHT,
 )
+from .validation import validate_pick, validate_ring
 
 
-def area_id_of(hass, entity_id: str) -> str | None:
+def area_id_of(hass: HomeAssistant, entity_id: str) -> str | None:
     """Return the entity's area, falling back to its device's area.
 
     Args:
@@ -54,6 +58,20 @@ def area_id_of(hass, entity_id: str) -> str | None:
     return None
 
 
+def floor_id_of(hass: HomeAssistant, area_id: str | None) -> str | None:
+    """Return the floor an area is on.
+
+    Args:
+        hass: Home Assistant instance.
+        area_id: Area to look up, or None.
+
+    Returns:
+        The floor id, or None when the area is None or on no floor.
+    """
+    area = ar.async_get(hass).async_get_area(area_id) if area_id else None
+    return area.floor_id if area else None
+
+
 class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Single-instance setup: only the optional quiet-hours entity."""
 
@@ -64,7 +82,14 @@ class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
     def async_get_supported_subentry_types(
         cls, config_entry: ConfigEntry
     ) -> dict[str, type[ConfigSubentryFlow]]:
-        """Notification lights are added as subentries."""
+        """Offer the Notification light subentry type.
+
+        Args:
+            config_entry: The integration's config entry.
+
+        Returns:
+            Subentry type name to flow class.
+        """
         return {SUBENTRY_LIGHT: LightSubentryFlow}
 
     async def async_step_user(
@@ -97,48 +122,129 @@ class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
 class LightSubentryFlow(ConfigSubentryFlow):
     """Register one Notification light: the `_rgb` ring entity of a T1M."""
 
+    _light: str
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> SubentryFlowResult:
-        """Pick the ring entity and its drawing settings.
+        """Pick the Notification light.
 
-        Rejects a ring that is already registered or that has no area, because scope
-        (room, floor, house) is resolved from the area.
+        Args:
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the details step once a valid light is picked.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            others = [s.data[CONF_LIGHT] for s in self._get_entry().subentries.values()]
+            errors = validate_pick(user_input[CONF_LIGHT], others)
+            if not errors:
+                self._light = user_input[CONF_LIGHT]
+                return await self.async_step_details()
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_LIGHT): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="light")
+                )
+            }
+        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    async def async_step_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Set the rooms, floor and drawing options of a new light.
+
+        Rooms and floor are prefilled from the light's device; with neither it is
+        house-only.
+
+        Args:
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the created subentry.
+        """
+        area = area_id_of(self.hass, self._light)
+        suggested = {
+            CONF_AREAS: [area] if area else [],
+            CONF_FLOOR: floor_id_of(self.hass, area),
+        }
+        return await self._async_details_form("details", suggested, user_input)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit a Notification light (offset calibration happens here).
+
+        Args:
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the updated subentry.
+        """
+        current = self._get_reconfigure_subentry()
+        self._light = current.data[CONF_LIGHT]
+        return await self._async_details_form(
+            "reconfigure", dict(current.data), user_input
+        )
+
+    async def _async_details_form(
+        self,
+        step_id: str,
+        suggested: dict[str, Any],
+        user_input: dict[str, Any] | None,
+    ) -> SubentryFlowResult:
+        """Show or process the details form for add and reconfigure.
+
+        Args:
+            step_id: "details" (add) or "reconfigure" (edit).
+            suggested: Values to prefill when nothing has been submitted yet.
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the created/updated subentry.
         """
         errors: dict[str, str] = {}
         if user_input is not None:
             # NumberSelector returns floats.
             for key in (CONF_SEGMENTS, CONF_OFFSET, CONF_BRIGHTNESS):
                 user_input[key] = int(user_input[key])
-            light = user_input[CONF_LIGHT]
-            entry = self._get_entry()
-            if any(s.data.get(CONF_LIGHT) == light for s in entry.subentries.values()):
-                errors[CONF_LIGHT] = "already_added"
-            elif area_id_of(self.hass, light) is None:
-                errors[CONF_LIGHT] = "no_area"
-            elif user_input[CONF_OFFSET] >= user_input[CONF_SEGMENTS]:
-                errors[CONF_OFFSET] = "offset_too_large"
+            errors = validate_ring(user_input)
             if not errors:
-                return self.async_create_entry(title=light, data=user_input)
+                data = {CONF_LIGHT: self._light, **user_input}
+                if step_id == "reconfigure":
+                    return self.async_update_and_abort(
+                        self._get_entry(),
+                        self._get_reconfigure_subentry(),
+                        title=self._light,
+                        data=data,
+                    )
+                return self.async_create_entry(
+                    title=self._light, data=data, unique_id=self._light
+                )
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_LIGHT): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="light", integration=AQARA_DOMAIN
-                    )
+                vol.Optional(CONF_AREAS, default=[]): selector.AreaSelector(
+                    selector.AreaSelectorConfig(multiple=True)
                 ),
+                vol.Optional(CONF_FLOOR): selector.FloorSelector(),
                 vol.Required(CONF_SEGMENTS, default=26): selector.NumberSelector(
                     selector.NumberSelectorConfig(min=8, max=60, mode="box")
                 ),
                 vol.Required(CONF_OFFSET, default=0): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=0, max=59, mode="box")
+                    selector.NumberSelectorConfig(min=0, mode="box")
                 ),
                 vol.Required(CONF_BRIGHTNESS, default=100): selector.NumberSelector(
-                    selector.NumberSelectorConfig(min=1, max=100, unit_of_measurement="%")
+                    selector.NumberSelectorConfig(
+                        min=1, max=100, unit_of_measurement="%"
+                    )
                 ),
-                vol.Required(CONF_QUIET_AT_BEDTIME, default=False): bool,
-                vol.Required(CONF_IDLE_POLICY, default=IDLE_OFF): selector.SelectSelector(
+                vol.Required(CONF_QUIET_HOURS, default=False): bool,
+                vol.Required(
+                    CONF_IDLE_POLICY, default=IDLE_OFF
+                ): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=IDLE_POLICIES, translation_key=CONF_IDLE_POLICY
                     )
@@ -146,7 +252,9 @@ class LightSubentryFlow(ConfigSubentryFlow):
             }
         )
         return self.async_show_form(
-            step_id="user",
-            data_schema=self.add_suggested_values_to_schema(schema, user_input),
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(
+                schema, user_input if user_input is not None else suggested
+            ),
             errors=errors,
         )
