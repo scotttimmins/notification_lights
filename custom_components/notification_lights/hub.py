@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from collections.abc import Callable
 from typing import Any
 
@@ -258,9 +259,11 @@ class Hub:
         self._painted: dict[str, list[dict[str, Any]]] = {}
         self._task: Any = None
         self._again = False
+        self._applied_options: dict[str, Any] = {}
 
     async def async_start(self) -> None:
         """Load the stored items, start following sources and draw the first frame."""
+        self._applied_options = deepcopy(dict(self.entry.options))
         for item_id, data in self.entry.options.get(KIND_NOTIFICATION, {}).items():
             self.notifications[item_id] = NotificationRuntime(self, item_id, data)
         for item_id, data in self.entry.options.get(KIND_LIGHT, {}).items():
@@ -288,6 +291,34 @@ class Hub:
         self.notifications.clear()
         self._preview_lights.clear()
         await self._render_once()
+
+    def options_applied(self, options: dict[str, Any]) -> bool:
+        """Whether these options are already what is running (so no reload is needed).
+
+        Args:
+            options: The entry's current options.
+
+        Returns:
+            True when they match what the hub last applied or saved itself.
+        """
+        return dict(options) == self._applied_options
+
+    @callback
+    def set_colour(self, item_id: str, rgb: list[int]) -> None:
+        """Change a notification's colour and save it, without reloading the entry.
+
+        Args:
+            item_id: The notification's id.
+            rgb: New [r, g, b].
+        """
+        runtime = self.notifications[item_id]
+        runtime.rgb = rgb
+        runtime.data[CONF_COLOUR] = rgb
+        options = deepcopy(dict(self.entry.options))
+        options[KIND_NOTIFICATION][item_id][CONF_COLOUR] = rgb
+        self._applied_options = deepcopy(options)
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+        runtime.preview()
 
     @callback
     def dismiss_all(self) -> None:

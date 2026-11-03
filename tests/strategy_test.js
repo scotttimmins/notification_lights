@@ -28,6 +28,7 @@ function add(id, attrs) {
   add(`switch.${slug}_enabled`, { notification: name, part: "enabled" });
   add(`button.${slug}_preview`, { notification: name, part: "preview" });
   add(`button.${slug}_dismiss`, { notification: name, part: "dismiss" });
+  if (name !== "Bins") add(`light.${slug}_colour`, { notification: name, part: "colour" });
 });
 add("button.dismiss_all", { part: "dismiss_all" });
 add("button.bed_cal", { part: "calibration", light: "Bedroom" });
@@ -43,6 +44,9 @@ states["sensor.other"] = { attributes: { part: "active", notification: "Nope" } 
   assert(view.type === "sections", "sections view");
   const names = view.sections.flatMap((s) => s.cards).filter((c) => c.type === "vertical-stack").map((c) => c.cards[0].name);
   assert(JSON.stringify(names) === JSON.stringify(["1. Fire", "2. Leak", "3. Washing", "4. Drying", "5. Fridge", "6. Vacuum", "7. Rain", "8. Bins"]), "priority order: " + names);
+  const tiles = view.sections.flatMap((s) => s.cards).filter((c) => c.type === "vertical-stack").map((c) => c.cards[0]);
+  assert(tiles.find((t) => t.name === "1. Fire").entity === "light.fire_colour", "tile uses the colour light");
+  assert(tiles.find((t) => t.name === "8. Bins").entity === "binary_sensor.bins_active", "falls back to the active sensor");
   assert(!names.some((n) => n.includes("Nope")), "other platforms ignored");
   assert(view.sections.length === 4, "overview + 2 columns of notifications + lights, got " + view.sections.length);
   const flat = JSON.stringify(view);

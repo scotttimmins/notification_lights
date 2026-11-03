@@ -8,7 +8,7 @@
  *     title: Notifications        # optional
  *
  * It lists every Aqara Light Notification by priority (a tile in its own colour, lit while it
- * is showing, then its details and Enabled / Preview / Dismiss controls), a Dismiss all
+ * is showing; tap it to change the colour; then its details and Enabled / Preview / Dismiss controls), a Dismiss all
  * button, and the Notification lights with their calibration buttons. The view is built when
  * the dashboard loads, so reload it after adding or removing items.
  */
@@ -43,7 +43,7 @@ function readModel(hass) {
       item[attrs.part] = entityId;
       if (attrs.part === "active") {
         item.priority = attrs.priority;
-        item.colour = attrs.colour;
+        item.rgb = attrs.colour;
       }
     }
   }
@@ -61,7 +61,9 @@ function readModel(hass) {
  * @returns {object} A vertical-stack card.
  */
 function notificationCard(n) {
-  const colour = Array.isArray(n.colour) ? `rgb(${n.colour.join(",")})` : "primary";
+  // The Colour light colours its own tile and opens the colour wheel when tapped; without
+  // one (older install) fall back to the colour recorded when the dashboard was built.
+  const fallback = Array.isArray(n.rgb) ? `rgb(${n.rgb.join(",")})` : "primary";
   const rows = [
     { type: "attribute", entity: n.active, attribute: "scope", name: "Where" },
     { type: "attribute", entity: n.active, attribute: "footprint", name: "Footprint" },
@@ -77,10 +79,11 @@ function notificationCard(n) {
     cards: [
       {
         type: "tile",
-        entity: n.active,
+        entity: n.colour || n.active,
         name: `${Number.isFinite(n.priority) ? `${n.priority}. ` : ""}${n.name}`,
         icon: "mdi:bell-ring",
-        color: colour,
+        ...(n.colour ? {} : { color: fallback }),
+        tap_action: { action: "more-info" },
         state_content: ["state"],
       },
       { type: "entities", entities: rows },

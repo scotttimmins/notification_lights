@@ -23,7 +23,7 @@ from .const import (
 )
 from .hub import Hub
 
-PLATFORMS = [Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON]
+PLATFORMS = [Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.LIGHT]
 STRATEGY_FILE = "notification-lights-strategy.js"
 
 type NotificationLightsConfigEntry = ConfigEntry[Hub]
@@ -168,7 +168,9 @@ async def async_migrate_entry(
 
 
 async def _reload(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
-    """Reload after an option changed."""
+    """Reload after an option changed, unless the hub made the change itself (a colour)."""
+    if entry.runtime_data.options_applied(entry.options):
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

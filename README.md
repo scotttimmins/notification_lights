@@ -17,10 +17,10 @@ Everything is managed from the integration's **Configure** dialog, as groups (th
 
 A notification shows exactly while its source is active. Lower priority numbers paint on top. For a notification that overrides everything, use the whole footprint and the top priority.
 
-Each notification gets an **Enabled** switch, **Active** sensor, **Preview** (30 s) and **Dismiss** buttons. **Dismiss all** is a button and the `notification_lights.dismiss_all` service.
+Each notification gets an **Enabled** switch, **Active** sensor, **Colour** light, **Preview** (30 s) and **Dismiss** buttons. The Colour light is the colour picker: open it (tap the notification's tile on the dashboard) and choose a colour; it is saved and previewed on the lights. Turning the Colour light on previews the notification and turning it off dismisses it. **Dismiss all** is a button and the `notification_lights.dismiss_all` service.
 
 ## Dashboard
-A generated dashboard lists every notification by priority (a tile in its own colour, lit while it is showing, then its scope, footprint and Enabled / Preview / Dismiss controls), a Dismiss all button and each light's calibration button. Create a new dashboard, open it, choose the three dots, Edit, then the three dots, Raw configuration editor, and paste:
+A generated dashboard lists every notification by priority (a tile in its own colour, lit while it is showing, tap it to change the colour, then its scope, footprint and Enabled / Preview / Dismiss controls), a Dismiss all button and each light's calibration button. Create a new dashboard, open it, choose the three dots, Edit, then the three dots, Raw configuration editor, and paste:
 
 ```yaml
 strategy:
