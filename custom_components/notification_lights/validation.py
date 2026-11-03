@@ -25,6 +25,21 @@ def validate_pick(light: str, other_lights: Iterable[str]) -> dict[str, str]:
     return {}
 
 
+def validate_priority(priority: int, other_priorities: Iterable[int]) -> dict[str, str]:
+    """Check a priority is not used by another notification.
+
+    Args:
+        priority: The submitted priority.
+        other_priorities: Priorities of the other notifications.
+
+    Returns:
+        A map of field to error key; empty when valid.
+    """
+    if priority in set(other_priorities):
+        return {"priority": "priority_taken"}
+    return {}
+
+
 def validate_ring(user_input: dict[str, Any]) -> dict[str, str]:
     """Check the offset lies inside the ring.
 

@@ -14,28 +14,51 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import TemplateError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
+from homeassistant.helpers.template import Template
 
 from .const import (
     AQARA_DOMAIN,
     CONF_AREAS,
     CONF_BRIGHTNESS,
+    CONF_COLOUR,
+    CONF_DELAY,
     CONF_FLOOR,
+    CONF_FOOTPRINT,
     CONF_IDLE_POLICY,
     CONF_LIGHT,
+    CONF_NAME,
     CONF_OFFSET,
+    CONF_PRIORITY,
     CONF_QUIET_ENTITY,
     CONF_QUIET_HOURS,
+    CONF_SCOPE,
+    CONF_SCOPE_AREA,
+    CONF_SCOPE_FLOOR,
     CONF_SEGMENTS,
+    CONF_SHOW_QUIET,
+    CONF_SOURCE_ENTITIES,
+    CONF_SOURCE_STATE,
+    CONF_SOURCE_TEMPLATE,
+    CONF_SOURCE_TYPE,
     DOMAIN,
     IDLE_OFF,
     IDLE_POLICIES,
+    SCOPE_FLOOR,
+    SCOPE_HOUSE,
+    SCOPE_ROOM,
+    SCOPES,
+    SOURCE_ENTITIES,
+    SOURCE_TEMPLATE,
     SUBENTRY_LIGHT,
+    SUBENTRY_NOTIFICATION,
 )
-from .validation import validate_pick, validate_ring
+from .footprint import FOOTPRINTS
+from .validation import validate_pick, validate_priority, validate_ring
 
 
 def area_id_of(hass: HomeAssistant, entity_id: str) -> str | None:
@@ -90,7 +113,10 @@ class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
         Returns:
             Subentry type name to flow class.
         """
-        return {SUBENTRY_LIGHT: LightSubentryFlow}
+        return {
+            SUBENTRY_LIGHT: LightSubentryFlow,
+            SUBENTRY_NOTIFICATION: NotificationSubentryFlow,
+        }
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -258,3 +284,244 @@ class LightSubentryFlow(ConfigSubentryFlow):
             ),
             errors=errors,
         )
+
+
+class NotificationSubentryFlow(ConfigSubentryFlow):
+    """Define one Aqara Light Notification: how it looks, where it shows, what raises it."""
+
+    def __init__(self) -> None:
+        """Start with no collected data."""
+        self._data: dict[str, Any] = {}
+        self._editing = False
+
+    @property
+    def _current(self) -> dict[str, Any]:
+        """Existing values when editing, otherwise nothing."""
+        if self._editing:
+            return dict(self._get_reconfigure_subentry().data)
+        return {}
+
+    def _other_priorities(self) -> list[int]:
+        """Priorities used by the other notifications."""
+        skip = self._get_reconfigure_subentry().subentry_id if self._editing else None
+        return [
+            int(s.data[CONF_PRIORITY])
+            for s in self._get_entry().subentries.values()
+            if s.subentry_type == SUBENTRY_NOTIFICATION and s.subentry_id != skip
+        ]
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Name, colour, footprint, priority, quiet hours, scope and delay.
+
+        Args:
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the next step.
+        """
+        errors: dict[str, str] = {}
+        others = self._other_priorities()
+        if user_input is not None:
+            user_input[CONF_PRIORITY] = int(user_input[CONF_PRIORITY])
+            user_input[CONF_DELAY] = int(user_input[CONF_DELAY])
+            errors = validate_priority(user_input[CONF_PRIORITY], others)
+            if not errors:
+                self._data.update(user_input)
+                scope = user_input[CONF_SCOPE]
+                if scope == SCOPE_ROOM:
+                    return await self.async_step_scope_room()
+                if scope == SCOPE_FLOOR:
+                    return await self.async_step_scope_floor()
+                return await self.async_step_source()
+
+        defaults = {
+            CONF_COLOUR: [255, 255, 255],
+            CONF_FOOTPRINT: "eighth_1",
+            CONF_PRIORITY: max(others, default=0) + 1,
+            CONF_SHOW_QUIET: False,
+            CONF_SCOPE: SCOPE_HOUSE,
+            CONF_DELAY: 0,
+            **self._current,
+        }
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_NAME): selector.TextSelector(),
+                vol.Required(CONF_COLOUR): selector.ColorRGBSelector(),
+                vol.Required(CONF_FOOTPRINT): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=FOOTPRINTS, translation_key=CONF_FOOTPRINT
+                    )
+                ),
+                vol.Required(CONF_PRIORITY): selector.NumberSelector(
+                    selector.NumberSelectorConfig(min=1, mode="box")
+                ),
+                vol.Required(CONF_SHOW_QUIET): bool,
+                vol.Required(CONF_SCOPE): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=SCOPES, translation_key=CONF_SCOPE
+                    )
+                ),
+                vol.Required(CONF_DELAY): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0, mode="box", unit_of_measurement="s"
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(
+                schema, user_input if user_input is not None else defaults
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Edit a notification: the same steps, prefilled.
+
+        Args:
+            user_input: Unused; the first step collects it.
+
+        Returns:
+            The first form.
+        """
+        self._editing = True
+        return await self.async_step_user()
+
+    async def async_step_scope_room(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Pick the room for room scope.
+
+        Args:
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the source step.
+        """
+        if user_input is not None:
+            self._data[CONF_SCOPE_AREA] = user_input[CONF_SCOPE_AREA]
+            self._data.pop(CONF_SCOPE_FLOOR, None)
+            return await self.async_step_source()
+        schema = vol.Schema({vol.Required(CONF_SCOPE_AREA): selector.AreaSelector()})
+        return self.async_show_form(
+            step_id="scope_room",
+            data_schema=self.add_suggested_values_to_schema(schema, self._current),
+        )
+
+    async def async_step_scope_floor(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Pick the floor for floor scope.
+
+        Args:
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the source step.
+        """
+        if user_input is not None:
+            self._data[CONF_SCOPE_FLOOR] = user_input[CONF_SCOPE_FLOOR]
+            self._data.pop(CONF_SCOPE_AREA, None)
+            return await self.async_step_source()
+        schema = vol.Schema({vol.Required(CONF_SCOPE_FLOOR): selector.FloorSelector()})
+        return self.async_show_form(
+            step_id="scope_floor",
+            data_schema=self.add_suggested_values_to_schema(schema, self._current),
+        )
+
+    async def async_step_source(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Choose how the source is defined: entities or a template.
+
+        Args:
+            user_input: Unused; this is a menu.
+
+        Returns:
+            The menu.
+        """
+        if self._data[CONF_SCOPE] == SCOPE_HOUSE:
+            self._data.pop(CONF_SCOPE_AREA, None)
+            self._data.pop(CONF_SCOPE_FLOOR, None)
+        return self.async_show_menu(
+            step_id="source", menu_options=[SOURCE_ENTITIES, SOURCE_TEMPLATE]
+        )
+
+    async def async_step_entities(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Source from entities: active while any is in the given state.
+
+        Args:
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the finished subentry.
+        """
+        if user_input is not None:
+            self._data.update(user_input)
+            self._data[CONF_SOURCE_TYPE] = SOURCE_ENTITIES
+            self._data.pop(CONF_SOURCE_TEMPLATE, None)
+            return self._finish()
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_SOURCE_ENTITIES): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
+                vol.Required(CONF_SOURCE_STATE, default="on"): selector.TextSelector(),
+            }
+        )
+        return self.async_show_form(
+            step_id="entities",
+            data_schema=self.add_suggested_values_to_schema(schema, self._current),
+        )
+
+    async def async_step_template(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Source from a template: active while it renders true.
+
+        Args:
+            user_input: The submitted form, or None to show it.
+
+        Returns:
+            The form, or the finished subentry.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                Template(user_input[CONF_SOURCE_TEMPLATE], self.hass).ensure_valid()
+            except TemplateError:
+                errors[CONF_SOURCE_TEMPLATE] = "invalid_template"
+            else:
+                self._data.update(user_input)
+                self._data[CONF_SOURCE_TYPE] = SOURCE_TEMPLATE
+                self._data.pop(CONF_SOURCE_ENTITIES, None)
+                self._data.pop(CONF_SOURCE_STATE, None)
+                return self._finish()
+        schema = vol.Schema(
+            {vol.Required(CONF_SOURCE_TEMPLATE): selector.TemplateSelector()}
+        )
+        return self.async_show_form(
+            step_id="template",
+            data_schema=self.add_suggested_values_to_schema(
+                schema, user_input if user_input is not None else self._current
+            ),
+            errors=errors,
+        )
+
+    def _finish(self) -> SubentryFlowResult:
+        """Create the subentry, or update it when editing."""
+        if self._editing:
+            return self.async_update_and_abort(
+                self._get_entry(),
+                self._get_reconfigure_subentry(),
+                title=self._data[CONF_NAME],
+                data=self._data,
+            )
+        return self.async_create_entry(title=self._data[CONF_NAME], data=self._data)

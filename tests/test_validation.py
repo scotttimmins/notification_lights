@@ -1,21 +1,9 @@
 """Why: a wrongly picked light (main light, duplicate) or a bad offset breaks placement."""
 
-import importlib.util
-import pathlib
-import sys
-import types
 
-# Load only const + validation; the package __init__ needs Home Assistant.
-pkg = pathlib.Path(__file__).parent.parent / "custom_components" / "notification_lights"
-sys.modules["notification_lights"] = types.ModuleType("notification_lights")
-sys.modules["notification_lights"].__path__ = [str(pkg)]
-for name in ("const", "validation"):
-    spec = importlib.util.spec_from_file_location(f"notification_lights.{name}", pkg / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[f"notification_lights.{name}"] = module
-    spec.loader.exec_module(module)
+import _load  # noqa: F401
 
-from notification_lights.validation import validate_pick, validate_ring  # noqa: E402
+from notification_lights.validation import validate_pick, validate_ring
 
 
 def test_ring_light_accepted():

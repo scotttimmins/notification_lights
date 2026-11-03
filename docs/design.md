@@ -1,6 +1,6 @@
 # Design
 
-Status: decided 2026-11-03 in a design review. Replaces `homeassistant-config/docs/notification-lights.md`. Terms: `CONTEXT.md`. Why an integration: `docs/adr/0001-custom-integration.md`.
+Status: decided 2026-11-03 in a design review; built, imports verified against Home Assistant 2026.10.4, behaviour not yet run in HA. Replaces `homeassistant-config/docs/notification-lights.md`. Terms: `CONTEXT.md`. Why an integration: `docs/adr/0001-custom-integration.md`.
 
 ## Delivery
 HACS custom integration `notification_lights`, requires `aqara_advanced_lighting` (HACS), checked in the config flow (abort with install hint; `after_dependencies`, not `dependencies`, so the message shows). Standalone repo, GitHub origin. Config flow with subentries. Dashboard: native HA device/entity pages first, then a generated dashboard strategy (JS) as a follow-up.

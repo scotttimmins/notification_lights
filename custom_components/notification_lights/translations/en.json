@@ -60,6 +60,63 @@
         "already_added": "This light is already added.",
         "offset_too_large": "Offset must be less than the number of segments."
       }
+    },
+    "notification": {
+      "initiate_flow": { "user": "Add notification" },
+      "entry_type": "Notification",
+      "step": {
+        "user": {
+          "title": "Notification",
+          "description": "How it looks and where it shows. A notification follows its source exactly. Lower priority numbers paint on top.",
+          "data": {
+            "name": "Name",
+            "colour": "Colour",
+            "footprint": "Footprint",
+            "priority": "Priority",
+            "show_during_quiet_hours": "Show during quiet hours",
+            "scope": "Scope",
+            "delay": "Source must hold for"
+          },
+          "data_description": {
+            "delay": "Seconds the source must stay active before the notification shows."
+          }
+        },
+        "scope_room": {
+          "title": "Room",
+          "data": { "scope_area": "Room" }
+        },
+        "scope_floor": {
+          "title": "Floor",
+          "data": { "scope_floor": "Floor" }
+        },
+        "source": {
+          "title": "What raises it",
+          "menu_options": {
+            "entities": "Entities in a state",
+            "template": "A template"
+          }
+        },
+        "entities": {
+          "title": "Source entities",
+          "description": "Active while any of these entities is in the given state.",
+          "data": {
+            "source_entities": "Entities",
+            "source_state": "Active state"
+          }
+        },
+        "template": {
+          "title": "Source template",
+          "description": "Active while the template renders true.",
+          "data": { "source_template": "Template" }
+        },
+        "reconfigure": {
+          "title": "Notification"
+        }
+      },
+      "error": {
+        "priority_taken": "Another notification already uses this priority.",
+        "invalid_template": "This template is not valid."
+      }
     }
   },
   "selector": {
@@ -68,6 +125,40 @@
         "off": "Turn the notification light off",
         "restore": "Restore its previous state"
       }
+    },
+    "scope": {
+      "options": {
+        "house": "Whole house",
+        "floor": "One floor",
+        "room": "One room"
+      }
+    },
+    "footprint": {
+      "options": {
+        "whole": "Whole light",
+        "half_1": "Half: slots 1-4",
+        "half_2": "Half: slots 3-6",
+        "half_3": "Half: slots 5-8",
+        "half_4": "Half: slots 7-2",
+        "quarter_1": "Quarter 1",
+        "quarter_2": "Quarter 2",
+        "quarter_3": "Quarter 3",
+        "quarter_4": "Quarter 4",
+        "eighth_1": "Eighth 1",
+        "eighth_2": "Eighth 2",
+        "eighth_3": "Eighth 3",
+        "eighth_4": "Eighth 4",
+        "eighth_5": "Eighth 5",
+        "eighth_6": "Eighth 6",
+        "eighth_7": "Eighth 7",
+        "eighth_8": "Eighth 8"
+      }
+    }
+  },
+  "services": {
+    "dismiss_all": {
+      "name": "Dismiss all",
+      "description": "Dismiss every active notification until its source next starts."
     }
   }
 }
