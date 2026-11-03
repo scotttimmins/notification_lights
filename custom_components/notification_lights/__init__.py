@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -20,6 +24,7 @@ from .const import (
 from .hub import Hub
 
 PLATFORMS = [Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON]
+STRATEGY_FILE = "notification-lights-strategy.js"
 
 type NotificationLightsConfigEntry = ConfigEntry[Hub]
 
@@ -40,7 +45,26 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             entry.runtime_data.dismiss_all()
 
     hass.services.async_register(DOMAIN, SERVICE_DISMISS_ALL, _dismiss_all)
+    await _register_dashboard_strategy(hass)
     return True
+
+
+async def _register_dashboard_strategy(hass: HomeAssistant) -> None:
+    """Serve the dashboard strategy and load it in the frontend.
+
+    A dashboard then uses it with `strategy: {type: custom:notification-lights}`. The
+    file's modified time is the cache-buster, so an update shows up without a hard refresh.
+
+    Args:
+        hass: Home Assistant instance.
+    """
+    path = Path(__file__).parent / "www" / STRATEGY_FILE
+    url = f"/{DOMAIN}/{STRATEGY_FILE}"
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(url, str(path), cache_headers=False)]
+    )
+    version = await hass.async_add_executor_job(lambda: int(path.stat().st_mtime))
+    add_extra_js_url(hass, f"{url}?v={version}")
 
 
 async def async_setup_entry(

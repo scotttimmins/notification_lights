@@ -76,6 +76,7 @@ class LightPreviewButton(ButtonEntity):
         self._item_id = item_id
         self._attr_unique_id = f"{item_id}_preview"
         self._attr_name = f"{light} calibration preview"
+        self._attr_extra_state_attributes = {"part": "calibration", "light": light}
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry.entry_id}_{LIGHTS_PARENT}")}
         )
@@ -90,6 +91,7 @@ class DismissAllButton(ButtonEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Dismiss all"
+    _attr_extra_state_attributes = {"part": "dismiss_all"}
 
     def __init__(self, hub, entry: ConfigEntry) -> None:
         """Create the button.

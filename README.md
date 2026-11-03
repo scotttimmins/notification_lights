@@ -19,6 +19,17 @@ A notification shows exactly while its source is active. Lower priority numbers 
 
 Each notification gets an **Enabled** switch, **Active** sensor, **Preview** (30 s) and **Dismiss** buttons. **Dismiss all** is a button and the `notification_lights.dismiss_all` service.
 
+## Dashboard
+A generated dashboard lists every notification by priority (a tile in its own colour, lit while it is showing, then its scope, footprint and Enabled / Preview / Dismiss controls), a Dismiss all button and each light's calibration button. Create a new dashboard, open it, choose the three dots, Edit, then the three dots, Raw configuration editor, and paste:
+
+```yaml
+strategy:
+  type: custom:notification-lights
+  title: Notifications   # optional
+```
+
+It is built when the dashboard loads, so reload the page after adding or removing items.
+
 ## Source examples
 Entities in a state: pick the entities and the state (default `on`); active while any matches. The delay field makes the source hold for N seconds first.
 
@@ -35,7 +46,7 @@ Poor air in one room (room scope, one notification per room):
 ```
 
 ## Tests
-`tests/test_logic.py` and `tests/test_validation.py` are plain Python and run anywhere. `tests/test_integration.py` needs `pytest-homeassistant-custom-component`, which only runs on Linux/macOS (it imports `fcntl`); it has not been run yet.
+`tests/test_logic.py`, `tests/test_validation.py` and `tests/test_summary.py` are plain Python and run anywhere; `node tests/strategy_test.js` checks the dashboard strategy. `tests/test_integration.py` needs `pytest-homeassistant-custom-component`, which only runs on Linux/macOS (it imports `fcntl`); it has not been run yet.
 
 ## Limits
 Only Aqara T1M notification lights. Accent LEDs, ordinary bulbs and showing only in occupied rooms are not supported.

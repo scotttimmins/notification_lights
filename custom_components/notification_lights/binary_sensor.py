@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .entity import NotificationEntity
+from .summary import scope_text
 
 
 async def async_setup_entry(
@@ -46,10 +47,13 @@ class ActiveSensor(NotificationEntity, BinarySensorEntity):
         """Why it is or is not showing."""
         r = self.runtime
         return {
+            **super().extra_state_attributes,
             "enabled": r.enabled,
             "source_active": r.source_active,
             "dismissed": r.dismissed,
             "previewing": r.previewing,
             "priority": r.priority,
             "footprint": r.footprint,
+            "scope": scope_text(r.data),
+            "colour": r.rgb,
         }
