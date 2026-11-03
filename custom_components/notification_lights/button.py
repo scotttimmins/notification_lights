@@ -25,15 +25,11 @@ async def async_setup_entry(
         async_add_entities: Callback to add entities.
     """
     hub = entry.runtime_data
-    for subentry_id, runtime in hub.notifications.items():
+    for item_id, runtime in hub.notifications.items():
+        async_add_entities([PreviewButton(runtime), DismissButton(runtime)])
+    for item_id, light in hub.lights.items():
         async_add_entities(
-            [PreviewButton(runtime), DismissButton(runtime)],
-            config_subentry_id=subentry_id,
-        )
-    for subentry_id, light in hub.lights.items():
-        async_add_entities(
-            [LightPreviewButton(hub, entry, subentry_id, light.get(CONF_NAME) or light["light"])],
-            config_subentry_id=subentry_id,
+            [LightPreviewButton(hub, entry, item_id, light.get(CONF_NAME) or light["light"])]
         )
     async_add_entities([DismissAllButton(hub, entry)])
 
@@ -66,30 +62,27 @@ class LightPreviewButton(ButtonEntity):
     """Show eighth 1 on a light for 30 seconds, to calibrate its offset."""
 
     _attr_has_entity_name = True
-    _attr_name = "Calibration preview"
 
-    def __init__(self, hub, entry: ConfigEntry, subentry_id: str, light: str) -> None:
+    def __init__(self, hub, entry: ConfigEntry, item_id: str, light: str) -> None:
         """Create the button.
 
         Args:
             hub: The hub.
             entry: The integration config entry.
-            subentry_id: The light's subentry id.
+            item_id: The light's id.
             light: The light's display name.
         """
         self._hub = hub
-        self._subentry_id = subentry_id
-        self._attr_unique_id = f"{subentry_id}_preview"
+        self._item_id = item_id
+        self._attr_unique_id = f"{item_id}_preview"
+        self._attr_name = f"{light} calibration preview"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, subentry_id)},
-            name=light,
-            manufacturer="Notification Lights",
-            via_device=(DOMAIN, f"{entry.entry_id}_{LIGHTS_PARENT}"),
+            identifiers={(DOMAIN, f"{entry.entry_id}_{LIGHTS_PARENT}")}
         )
 
     async def async_press(self) -> None:
         """Preview eighth 1."""
-        self._hub.preview_light(self._subentry_id)
+        self._hub.preview_light(self._item_id)
 
 
 class DismissAllButton(ButtonEntity):
@@ -108,9 +101,7 @@ class DismissAllButton(ButtonEntity):
         self._hub = hub
         self._attr_unique_id = f"{entry.entry_id}_dismiss_all"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_{NOTIFICATIONS_PARENT}")},
-            name="Notifications",
-            manufacturer="Notification Lights",
+            identifiers={(DOMAIN, f"{entry.entry_id}_{NOTIFICATIONS_PARENT}")}
         )
 
     async def async_press(self) -> None:

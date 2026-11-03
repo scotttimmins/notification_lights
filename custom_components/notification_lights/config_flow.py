@@ -6,7 +6,6 @@ the integration's Configure dialog rather than one add-flow per item.
 
 from __future__ import annotations
 
-from types import MappingProxyType
 from typing import Any
 
 import voluptuous as vol
@@ -15,8 +14,6 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
-    ConfigSubentry,
-    ConfigSubentryFlow,
     OptionsFlow,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -25,6 +22,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
+from homeassistant.util import ulid as ulid_util
 from homeassistant.helpers.template import Template
 
 from .const import (
@@ -60,8 +58,8 @@ from .const import (
     SCOPES,
     SOURCE_ENTITIES,
     SOURCE_TEMPLATE,
-    SUBENTRY_LIGHT,
-    SUBENTRY_NOTIFICATION,
+    KIND_LIGHT,
+    KIND_NOTIFICATION,
 )
 from .footprint import FOOTPRINTS
 from .summary import light_summary, notification_label, notification_summary
@@ -128,7 +126,7 @@ def friendly_name_of(hass: HomeAssistant, entity_id: str) -> str:
 class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Single-instance setup: only the optional quiet-hours entity."""
 
-    VERSION = 1
+    VERSION = 2
 
     @staticmethod
     @callback
@@ -142,24 +140,6 @@ class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
             The manager flow.
         """
         return ManagerFlow()
-
-    @classmethod
-    @callback
-    def async_get_supported_subentry_types(
-        cls, config_entry: ConfigEntry
-    ) -> dict[str, type[ConfigSubentryFlow]]:
-        """Offer the two item types, so the integration page groups them.
-
-        Args:
-            config_entry: The integration's config entry.
-
-        Returns:
-            Subentry type name to flow class.
-        """
-        return {
-            SUBENTRY_LIGHT: LightSubentryFlow,
-            SUBENTRY_NOTIFICATION: NotificationSubentryFlow,
-        }
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -208,8 +188,6 @@ def _pick_schema(options: list[dict[str, str]]) -> vol.Schema:
 class _FormBase:
     """State and helpers shared by every flow that edits a light or a notification."""
 
-    _can_remove = True
-
     def _init_state(self) -> None:
         """Start with nothing being edited."""
         self._data: dict[str, Any] = {}
@@ -221,26 +199,20 @@ class _FormBase:
         """The integration's config entry."""
         raise NotImplementedError
 
-    def _items(self, subentry_type: str) -> dict[str, ConfigSubentry]:
-        """Return this entry's subentries of one type."""
-        return {
-            sid: s
-            for sid, s in self._entry.subentries.items()
-            if s.subentry_type == subentry_type
-        }
+    def _items(self, kind: str) -> dict[str, dict[str, Any]]:
+        """Return this entry's stored items of one kind, by id."""
+        return dict(self._entry.options.get(kind, {}))
 
     @property
     def _current(self) -> dict[str, Any]:
         """Values of the item being edited (empty when adding)."""
         return dict(self._data)
 
-    async def _item_saved(
-        self, subentry_type: str, title: str, data: dict[str, Any]
-    ) -> Any:
+    async def _item_saved(self, kind: str, data: dict[str, Any]) -> Any:
         """Store the finished item and decide where the flow goes next."""
         raise NotImplementedError
 
-    async def _item_removed(self, subentry_type: str) -> Any:
+    async def _item_removed(self, kind: str) -> Any:
         """Remove the item and decide where the flow goes next."""
         raise NotImplementedError
 
@@ -261,7 +233,7 @@ class LightForms(_FormBase):
         """
         errors: dict[str, str] = {}
         if user_input is not None:
-            others = [s.data[CONF_LIGHT] for s in self._items(SUBENTRY_LIGHT).values()]
+            others = [s[CONF_LIGHT] for s in self._items(KIND_LIGHT).values()]
             errors = validate_pick(user_input[CONF_LIGHT], others)
             if not errors:
                 self._light = user_input[CONF_LIGHT]
@@ -295,18 +267,17 @@ class LightForms(_FormBase):
             The form, or the result of saving or removing.
         """
         errors: dict[str, str] = {}
-        editing = self._item_id is not None and self._can_remove
+        editing = self._item_id is not None
         if user_input is not None:
             if user_input.pop(CONF_REMOVE, False):
-                return await self._item_removed(SUBENTRY_LIGHT)
+                return await self._item_removed(KIND_LIGHT)
             # NumberSelector returns floats.
             for key in (CONF_SEGMENTS, CONF_OFFSET, CONF_BRIGHTNESS):
                 user_input[key] = int(user_input[key])
             errors = validate_ring(user_input)
             if not errors:
                 return await self._item_saved(
-                    SUBENTRY_LIGHT,
-                    user_input[CONF_NAME],
+                    KIND_LIGHT,
                     {CONF_LIGHT: self._light, **user_input},
                 )
 
@@ -350,8 +321,8 @@ class NotificationForms(_FormBase):
     def _other_priorities(self) -> list[int]:
         """Priorities used by the other notifications."""
         return [
-            int(s.data[CONF_PRIORITY])
-            for sid, s in self._items(SUBENTRY_NOTIFICATION).items()
+            int(s[CONF_PRIORITY])
+            for sid, s in self._items(KIND_NOTIFICATION).items()
             if sid != self._item_id
         ]
 
@@ -370,7 +341,7 @@ class NotificationForms(_FormBase):
         others = self._other_priorities()
         if user_input is not None:
             if user_input.pop(CONF_REMOVE, False):
-                return await self._item_removed(SUBENTRY_NOTIFICATION)
+                return await self._item_removed(KIND_NOTIFICATION)
             user_input[CONF_PRIORITY] = int(user_input[CONF_PRIORITY])
             user_input[CONF_DELAY] = int(user_input[CONF_DELAY])
             errors = validate_priority(user_input[CONF_PRIORITY], others)
@@ -415,7 +386,7 @@ class NotificationForms(_FormBase):
                 )
             ),
         }
-        if self._item_id is not None and self._can_remove:
+        if self._item_id is not None:
             fields[vol.Optional(CONF_REMOVE, default=False)] = bool
         return self.async_show_form(
             step_id="notification",
@@ -551,112 +522,7 @@ class NotificationForms(_FormBase):
 
     async def _finish_notification(self) -> Any:
         """Save the notification."""
-        return await self._item_saved(
-            SUBENTRY_NOTIFICATION, self._data[CONF_NAME], dict(self._data)
-        )
-
-
-class _SubentryItemFlow(_FormBase):
-    """Add and edit from the integration page: one item per flow, no removing."""
-
-    _can_remove = False
-
-    @property
-    def _entry(self) -> ConfigEntry:
-        """The integration's config entry."""
-        return self._get_entry()
-
-    async def _item_saved(
-        self, subentry_type: str, title: str, data: dict[str, Any]
-    ) -> Any:
-        """Create the subentry, or update it when editing.
-
-        Args:
-            subentry_type: light or notification.
-            title: The subentry title.
-            data: The stored data.
-
-        Returns:
-            The finished flow.
-        """
-        if self._item_id is None:
-            return self.async_create_entry(title=title, data=data)
-        return self.async_update_and_abort(
-            self._get_entry(), self._get_reconfigure_subentry(), title=title, data=data
-        )
-
-    def _load_for_edit(self) -> None:
-        """Load the subentry being reconfigured."""
-        sub = self._get_reconfigure_subentry()
-        self._item_id, self._data = sub.subentry_id, dict(sub.data)
-
-
-class LightSubentryFlow(_SubentryItemFlow, LightForms, ConfigSubentryFlow):
-    """Add or edit one Notification light from the integration page."""
-
-    def __init__(self) -> None:
-        """Start with nothing being edited."""
-        self._init_state()
-
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> Any:
-        """Start adding a light.
-
-        Args:
-            user_input: Unused.
-
-        Returns:
-            The pick step.
-        """
-        return await self.async_step_light_pick()
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Edit the light.
-
-        Args:
-            user_input: Unused.
-
-        Returns:
-            The details step.
-        """
-        self._load_for_edit()
-        self._light = self._data[CONF_LIGHT]
-        self._data.setdefault(CONF_NAME, friendly_name_of(self.hass, self._light))
-        return await self.async_step_light_details()
-
-
-class NotificationSubentryFlow(_SubentryItemFlow, NotificationForms, ConfigSubentryFlow):
-    """Add or edit one notification from the integration page."""
-
-    def __init__(self) -> None:
-        """Start with nothing being edited."""
-        self._init_state()
-
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> Any:
-        """Start adding a notification.
-
-        Args:
-            user_input: Unused.
-
-        Returns:
-            The first form.
-        """
-        return await self.async_step_notification()
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Edit the notification.
-
-        Args:
-            user_input: Unused.
-
-        Returns:
-            The first form, prefilled.
-        """
-        self._load_for_edit()
-        return await self.async_step_notification()
+        return await self._item_saved(KIND_NOTIFICATION, dict(self._data))
 
 
 class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
@@ -671,66 +537,46 @@ class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
         """The integration's config entry."""
         return self.config_entry
 
-    async def _item_saved(
-        self, subentry_type: str, title: str, data: dict[str, Any]
-    ) -> Any:
+    async def _item_saved(self, kind: str, data: dict[str, Any]) -> Any:
         """Save the item and return to its group list.
 
         Args:
-            subentry_type: light or notification.
-            title: The subentry title.
+            kind: KIND_LIGHT or KIND_NOTIFICATION.
             data: The stored data.
 
         Returns:
             The group list.
         """
-        self._save(subentry_type, title, data)
-        return await self._group_list(subentry_type)
+        items = self._items(kind)
+        items[self._item_id or ulid_util.ulid()] = data
+        self._write(kind, items)
+        return await self._group_list(kind)
 
-    async def _item_removed(self, subentry_type: str) -> Any:
+    async def _item_removed(self, kind: str) -> Any:
         """Remove the item and return to its group list.
 
         Args:
-            subentry_type: light or notification.
+            kind: KIND_LIGHT or KIND_NOTIFICATION.
 
         Returns:
             The group list.
         """
-        self._remove()
-        return await self._group_list(subentry_type)
+        items = self._items(kind)
+        items.pop(self._item_id, None)
+        self._write(kind, items)
+        return await self._group_list(kind)
 
-    async def _group_list(self, subentry_type: str) -> Any:
+    async def _group_list(self, kind: str) -> Any:
         """Show the list for one group."""
-        if subentry_type == SUBENTRY_LIGHT:
+        if kind == KIND_LIGHT:
             return await self.async_step_lights()
         return await self.async_step_notifications()
 
-    def _save(self, subentry_type: str, title: str, data: dict[str, Any]) -> None:
-        """Create the item being edited, or update it."""
-        if self._item_id is None:
-            self.hass.config_entries.async_add_subentry(
-                self.config_entry,
-                ConfigSubentry(
-                    data=MappingProxyType(data),
-                    subentry_type=subentry_type,
-                    title=title,
-                    unique_id=None,
-                ),
-            )
-        else:
-            self.hass.config_entries.async_update_subentry(
-                self.config_entry,
-                self.config_entry.subentries[self._item_id],
-                data=data,
-                title=title,
-            )
-
-    def _remove(self) -> None:
-        """Remove the item being edited."""
-        if self._item_id is not None:
-            self.hass.config_entries.async_remove_subentry(
-                self.config_entry, self._item_id
-            )
+    def _write(self, kind: str, items: dict[str, dict[str, Any]]) -> None:
+        """Save one kind's items in the options (reloads the entry)."""
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, options={**self.config_entry.options, kind: items}
+        )
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -793,7 +639,7 @@ class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
         Returns:
             The list, or the next step.
         """
-        items = self._items(SUBENTRY_LIGHT)
+        items = self._items(KIND_LIGHT)
         if user_input is not None:
             choice = user_input[CHOICE]
             if choice == CHOICE_BACK:
@@ -801,15 +647,15 @@ class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
             if choice == CHOICE_ADD:
                 self._item_id, self._data = None, {}
                 return await self.async_step_light_pick()
-            self._item_id, self._data = choice, dict(items[choice].data)
+            self._item_id, self._data = choice, dict(items[choice])
             self._light = self._data[CONF_LIGHT]
             self._data.setdefault(CONF_NAME, friendly_name_of(self.hass, self._light))
             return await self.async_step_light_details()
         options = [
             {"value": CHOICE_ADD, "label": "Add a notification light"},
             *[
-                {"value": sid, "label": s.data.get(CONF_NAME) or s.data[CONF_LIGHT]}
-                for sid, s in sorted(items.items(), key=lambda kv: kv[1].data.get(CONF_NAME) or kv[1].data[CONF_LIGHT])
+                {"value": sid, "label": s.get(CONF_NAME) or s[CONF_LIGHT]}
+                for sid, s in sorted(items.items(), key=lambda kv: kv[1].get(CONF_NAME) or kv[1][CONF_LIGHT])
             ],
             {"value": CHOICE_BACK, "label": "Back"},
         ]
@@ -817,7 +663,7 @@ class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
             step_id="lights",
             data_schema=_pick_schema(options),
             description_placeholders={
-                "summary": light_summary(s.data for s in items.values())
+                "summary": light_summary(items.values())
             },
         )
 
@@ -832,7 +678,7 @@ class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
         Returns:
             The list, or the next step.
         """
-        items = self._items(SUBENTRY_NOTIFICATION)
+        items = self._items(KIND_NOTIFICATION)
         if user_input is not None:
             choice = user_input[CHOICE]
             if choice == CHOICE_BACK:
@@ -840,14 +686,14 @@ class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
             if choice == CHOICE_ADD:
                 self._item_id, self._data = None, {}
             else:
-                self._item_id, self._data = choice, dict(items[choice].data)
+                self._item_id, self._data = choice, dict(items[choice])
             return await self.async_step_notification()
         options = [
             {"value": CHOICE_ADD, "label": "Add a notification"},
             *[
-                {"value": sid, "label": notification_label(s.data)}
+                {"value": sid, "label": notification_label(s)}
                 for sid, s in sorted(
-                    items.items(), key=lambda kv: int(kv[1].data[CONF_PRIORITY])
+                    items.items(), key=lambda kv: int(kv[1][CONF_PRIORITY])
                 )
             ],
             {"value": CHOICE_BACK, "label": "Back"},
@@ -856,7 +702,7 @@ class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
             step_id="notifications",
             data_schema=_pick_schema(options),
             description_placeholders={
-                "summary": notification_summary(s.data for s in items.values())
+                "summary": notification_summary(items.values())
             },
         )
 

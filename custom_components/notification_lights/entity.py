@@ -25,13 +25,10 @@ class NotificationEntity(Entity):
             name: Entity name shown after the device name.
         """
         self.runtime = runtime
-        self._attr_name = name
-        self._attr_unique_id = f"{runtime.subentry_id}_{key}"
+        self._attr_name = f"{runtime.name} {name}"
+        self._attr_unique_id = f"{runtime.item_id}_{key}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, runtime.subentry_id)},
-            name=f"{runtime.name} notification",
-            manufacturer="Notification Lights",
-            via_device=(DOMAIN, f"{runtime.hub.entry.entry_id}_{NOTIFICATIONS_PARENT}"),
+            identifiers={(DOMAIN, f"{runtime.hub.entry.entry_id}_{NOTIFICATIONS_PARENT}")},
         )
 
     async def async_added_to_hass(self) -> None:

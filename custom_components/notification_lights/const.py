@@ -5,8 +5,9 @@ AQARA_DOMAIN = "aqara_advanced_lighting"
 
 CONF_QUIET_ENTITY = "quiet_entity"
 
-SUBENTRY_LIGHT = "light"
-SUBENTRY_NOTIFICATION = "notification"
+# Keys of the option dicts holding the lights and notifications, by item id.
+KIND_LIGHT = "lights"
+KIND_NOTIFICATION = "notifications"
 
 # Notification light
 CONF_LIGHT = "light"

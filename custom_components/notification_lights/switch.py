@@ -27,10 +27,8 @@ async def async_setup_entry(
         async_add_entities: Callback to add entities.
     """
     hub = entry.runtime_data
-    for subentry_id, runtime in hub.notifications.items():
-        async_add_entities(
-            [EnabledSwitch(runtime)], config_subentry_id=subentry_id
-        )
+    for item_id, runtime in hub.notifications.items():
+        async_add_entities([EnabledSwitch(runtime)])
 
 
 class EnabledSwitch(NotificationEntity, SwitchEntity, RestoreEntity):

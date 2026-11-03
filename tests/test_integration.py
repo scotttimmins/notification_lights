@@ -18,49 +18,45 @@ def _enable(enable_custom_integrations):
     yield
 
 
-LIGHT = ConfigSubentryData(
-    subentry_type="light",
-    title="light.bed_rgb",
-    unique_id="light.bed_rgb",
-    data={
-        "light": "light.bed_rgb",
-        "areas": ["bedroom"],
-        "floor": None,
-        "segments": 26,
-        "offset": 0,
-        "brightness": 100,
-        "quiet_hours": False,
-        "idle_policy": "off",
-    },
-)
+LIGHT = {
+    "light": "light.bed_rgb",
+    "areas": ["bedroom"],
+    "floor": None,
+    "segments": 26,
+    "offset": 0,
+    "brightness": 100,
+    "quiet_hours": False,
+    "idle_policy": "off",
+}
 
 
 def notification(name, priority, footprint, scope="house", **extra):
-    return ConfigSubentryData(
-        subentry_type="notification",
-        title=name,
-        unique_id=None,
-        data={
-            "name": name,
-            "colour": [255, 0, 0],
-            "footprint": footprint,
-            "priority": priority,
-            "show_during_quiet_hours": False,
-            "scope": scope,
-            "delay": 0,
-            "source_type": "entities",
-            "source_entities": ["binary_sensor.door"],
-            "source_state": "on",
-            **extra,
-        },
-    )
+    return {
+        "name": name,
+        "colour": [255, 0, 0],
+        "footprint": footprint,
+        "priority": priority,
+        "show_during_quiet_hours": False,
+        "scope": scope,
+        "delay": 0,
+        "source_type": "entities",
+        "source_entities": ["binary_sensor.door"],
+        "source_state": "on",
+        **extra,
+    }
 
 
 async def setup(hass, *notifications):
     hass.states.async_set("light.bed_rgb", "off")
     hass.states.async_set("binary_sensor.door", "off")
     entry = MockConfigEntry(
-        domain=DOMAIN, data={}, subentries_data=[LIGHT, *notifications]
+        domain=DOMAIN,
+        data={},
+        version=2,
+        options={
+            "lights": {"bed": LIGHT},
+            "notifications": {f"n{i}": n for i, n in enumerate(notifications)},
+        },
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -109,3 +105,29 @@ async def test_dismiss_lasts_until_source_restarts(hass):
     hass.states.async_set("binary_sensor.door", "on")
     await hass.async_block_till_done()
     assert len(paint) == 2  # shown again after the source restarted
+
+
+async def test_migration_keeps_entity_ids_and_drops_subentries(hass):
+    """Why: moving off subentries must not delete entities users built automations on."""
+    from homeassistant.helpers import entity_registry as er
+
+    sub = ConfigSubentryData(
+        subentry_type="notification",
+        title="Door",
+        unique_id=None,
+        data=notification("Door", 1, "whole"),
+    )
+    old = MockConfigEntry(domain=DOMAIN, data={}, version=1, subentries_data=[sub])
+    old.add_to_hass(hass)
+    sid = next(iter(old.subentries))
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        "switch", DOMAIN, f"{sid}_enabled", config_entry=old, config_subentry_id=sid
+    )
+    hass.states.async_set("binary_sensor.door", "off")
+    assert await hass.config_entries.async_setup(old.entry_id)
+    await hass.async_block_till_done()
+    assert old.version == 2 and not old.subentries
+    assert old.options["notifications"][sid]["name"] == "Door"
+    ent = registry.async_get_entity_id("switch", DOMAIN, f"{sid}_enabled")
+    assert ent and registry.async_get(ent).config_subentry_id is None

@@ -1,4 +1,4 @@
-"""Pure validation for a Notification light subentry (no Home Assistant imports)."""
+"""Pure validation for a Notification light (no Home Assistant imports)."""
 
 from __future__ import annotations
 

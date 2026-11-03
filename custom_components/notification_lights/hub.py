@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry, ConfigSubentry
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.event import (
     EventStateChangedData,
@@ -43,8 +43,8 @@ from .const import (
     IDLE_RESTORE,
     PREVIEW_SECONDS,
     SOURCE_TEMPLATE,
-    SUBENTRY_LIGHT,
-    SUBENTRY_NOTIFICATION,
+    KIND_LIGHT,
+    KIND_NOTIFICATION,
 )
 from .paint import build_pattern
 from .scope import applies
@@ -55,16 +55,17 @@ _LOGGER = logging.getLogger(__name__)
 class NotificationRuntime:
     """One notification: follows its source and exposes enabled/dismissed/preview."""
 
-    def __init__(self, hub: Hub, subentry: ConfigSubentry) -> None:
-        """Create the runtime for a notification subentry.
+    def __init__(self, hub: Hub, item_id: str, data: dict[str, Any]) -> None:
+        """Create the runtime for one stored notification.
 
         Args:
             hub: The owning hub.
-            subentry: The notification's subentry.
+            item_id: The notification's id.
+            data: The notification's stored data.
         """
         self.hub = hub
-        self.subentry_id = subentry.subentry_id
-        self.data: dict[str, Any] = dict(subentry.data)
+        self.item_id = item_id
+        self.data: dict[str, Any] = dict(data)
         self.name: str = self.data["name"]
         self.priority: int = int(self.data[CONF_PRIORITY])
         self.footprint: str = self.data[CONF_FOOTPRINT]
@@ -259,13 +260,11 @@ class Hub:
         self._again = False
 
     async def async_start(self) -> None:
-        """Load subentries, start following sources and draw the first frame."""
-        for subentry in self.entry.subentries.values():
-            if subentry.subentry_type == SUBENTRY_NOTIFICATION:
-                runtime = NotificationRuntime(self, subentry)
-                self.notifications[subentry.subentry_id] = runtime
-            elif subentry.subentry_type == SUBENTRY_LIGHT:
-                self.lights[subentry.subentry_id] = dict(subentry.data)
+        """Load the stored items, start following sources and draw the first frame."""
+        for item_id, data in self.entry.options.get(KIND_NOTIFICATION, {}).items():
+            self.notifications[item_id] = NotificationRuntime(self, item_id, data)
+        for item_id, data in self.entry.options.get(KIND_LIGHT, {}).items():
+            self.lights[item_id] = dict(data)
         for runtime in self.notifications.values():
             await runtime.async_start()
         if self._quiet_entity:
@@ -297,23 +296,23 @@ class Hub:
             runtime.dismiss()
 
     @callback
-    def preview_light(self, subentry_id: str) -> None:
+    def preview_light(self, item_id: str) -> None:
         """Show eighth 1 on one light for PREVIEW_SECONDS, to calibrate its offset.
 
         Args:
-            subentry_id: The light's subentry id.
+            item_id: The light's id.
         """
-        if cancel := self._light_previews.pop(subentry_id, None):
+        if cancel := self._light_previews.pop(item_id, None):
             cancel()
-        self._preview_lights.add(subentry_id)
+        self._preview_lights.add(item_id)
 
         @callback
         def _done(_now: Any) -> None:
-            self._light_previews.pop(subentry_id, None)
-            self._preview_lights.discard(subentry_id)
+            self._light_previews.pop(item_id, None)
+            self._preview_lights.discard(item_id)
             self.request_render()
 
-        self._light_previews[subentry_id] = async_call_later(
+        self._light_previews[item_id] = async_call_later(
             self.hass, PREVIEW_SECONDS, _done
         )
         self.request_render()
@@ -346,7 +345,7 @@ class Hub:
     async def _render_once(self) -> None:
         """Draw every light, or put it back when nothing is left to show."""
         quiet = self._quiet_active()
-        for subentry_id, light in self.lights.items():
+        for item_id, light in self.lights.items():
             layers = [
                 (n.priority, n.footprint, n.rgb)
                 for n in self.notifications.values()
@@ -360,7 +359,7 @@ class Hub:
                 )
                 and not (quiet and light[CONF_QUIET_HOURS] and not n.show_quiet)
             ]
-            if subentry_id in self._preview_lights:
+            if item_id in self._preview_lights:
                 layers.append((0, "eighth_1", [255, 255, 255]))
             pattern = build_pattern(light[CONF_SEGMENTS], light[CONF_OFFSET], layers)
             await self._apply(light, pattern)

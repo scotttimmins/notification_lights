@@ -9,7 +9,14 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, LIGHTS_PARENT, NOTIFICATIONS_PARENT, SERVICE_DISMISS_ALL
+from .const import (
+    DOMAIN,
+    KIND_LIGHT,
+    KIND_NOTIFICATION,
+    LIGHTS_PARENT,
+    NOTIFICATIONS_PARENT,
+    SERVICE_DISMISS_ALL,
+)
 from .hub import Hub
 
 PLATFORMS = [Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON]
@@ -90,8 +97,54 @@ def _remove_old_device(hass: HomeAssistant, entry: NotificationLightsConfigEntry
         registry.async_remove_device(old.id)
 
 
+async def async_migrate_entry(
+    hass: HomeAssistant, entry: NotificationLightsConfigEntry
+) -> bool:
+    """Move lights and notifications from subentries into the entry's options.
+
+    Subentries made the integration page list every item on its own. Item ids stay the
+    same, so unique ids and entity ids survive; entities move onto the two group devices.
+
+    Args:
+        hass: Home Assistant instance.
+        entry: The config entry.
+
+    Returns:
+        True when the entry is at the current version.
+    """
+    if entry.version == 1:
+        _create_parent_devices(hass, entry)
+        devices = dr.async_get(hass)
+        parent = {
+            kind: devices.async_get_device(
+                identifiers={(DOMAIN, f"{entry.entry_id}_{key}")}
+            ).id
+            for kind, key in ((KIND_LIGHT, LIGHTS_PARENT), (KIND_NOTIFICATION, NOTIFICATIONS_PARENT))
+        }
+        options: dict = {KIND_LIGHT: {}, KIND_NOTIFICATION: {}}
+        kind_of = {}
+        for sid, sub in entry.subentries.items():
+            kind_of[sid] = KIND_LIGHT if sub.subentry_type == "light" else KIND_NOTIFICATION
+            options[kind_of[sid]][sid] = dict(sub.data)
+        registry = er.async_get(hass)
+        # Move entities off the subentries first: removing a subentry deletes its entities.
+        for ent in er.async_entries_for_config_entry(registry, entry.entry_id):
+            if ent.config_subentry_id in kind_of:
+                registry.async_update_entity(
+                    ent.entity_id,
+                    config_subentry_id=None,
+                    device_id=parent[kind_of[ent.config_subentry_id]],
+                )
+        for sid in kind_of:
+            hass.config_entries.async_remove_subentry(entry, sid)
+        hass.config_entries.async_update_entry(
+            entry, options={**entry.options, **options}, version=2
+        )
+    return True
+
+
 async def _reload(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
-    """Reload after a subentry or option changed."""
+    """Reload after an option changed."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
