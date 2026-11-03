@@ -1,0 +1,12 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Notification Lights",
+        "description": "Optionally pick an entity that means quiet hours (e.g. a bedtime helper).",
+        "data": { "quiet_entity": "Quiet hours entity" }
+      }
+    },
+    "abort": { "already_configured": "Notification Lights is already set up." }
+  }
+}

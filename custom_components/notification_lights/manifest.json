@@ -1,0 +1,12 @@
+{
+  "domain": "notification_lights",
+  "name": "Notification Lights",
+  "codeowners": ["@scotttimmins"],
+  "config_flow": true,
+  "dependencies": ["aqara_advanced_lighting"],
+  "documentation": "https://github.com/scotttimmins/notification_lights",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/scotttimmins/notification_lights/issues",
+  "version": "0.1.0"
+}
