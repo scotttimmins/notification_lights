@@ -84,7 +84,7 @@ function notificationCard(n) {
         icon: "mdi:bell-ring",
         ...(n.colour ? {} : { color: fallback }),
         tap_action: { action: "more-info" },
-        state_content: ["state"],
+        state_content: ["status"],
       },
       { type: "entities", entities: rows },
     ],

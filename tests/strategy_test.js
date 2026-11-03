@@ -28,7 +28,7 @@ function add(id, attrs) {
   add(`switch.${slug}_enabled`, { notification: name, part: "enabled" });
   add(`button.${slug}_preview`, { notification: name, part: "preview" });
   add(`button.${slug}_dismiss`, { notification: name, part: "dismiss" });
-  if (name !== "Bins") add(`light.${slug}_colour`, { notification: name, part: "colour" });
+  if (name !== "Bins") add(`light.${slug}_colour`, { notification: name, part: "colour", status: "idle" });
 });
 add("button.dismiss_all", { part: "dismiss_all" });
 add("button.bed_cal", { part: "calibration", light: "Bedroom" });

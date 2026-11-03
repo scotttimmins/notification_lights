@@ -29,10 +29,12 @@ async def async_setup_entry(
 
 
 class ColourLight(NotificationEntity, LightEntity):
-    """A notification seen as a light: on while showing, in the notification's colour.
+    """The notification's colour, always shown, with the colour wheel to change it.
 
-    Choosing a colour saves it and previews it on the lights. Turning it on previews the
-    notification, and turning it off dismisses it.
+    A light only reports its colour while on, so this one is always on: it stands for the
+    configured colour, not for whether the notification is showing (see the status
+    attribute and the Active sensor). Choosing a colour saves it and previews it. Turning
+    it on previews the notification; turning it off does nothing, use Dismiss.
     """
 
     _attr_color_mode = ColorMode.RGB
@@ -44,8 +46,13 @@ class ColourLight(NotificationEntity, LightEntity):
 
     @property
     def is_on(self) -> bool:
-        """Whether the notification is showing."""
-        return self.runtime.showing
+        """Always on, so the colour is always visible."""
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Add the plain-word status for the dashboard tile."""
+        return {**super().extra_state_attributes, "status": self.runtime.status}
 
     @property
     def rgb_color(self) -> tuple[int, int, int]:
@@ -67,5 +74,5 @@ class ColourLight(NotificationEntity, LightEntity):
             self.runtime.preview()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Dismiss the notification."""
-        self.runtime.dismiss()
+        """Do nothing: the colour does not switch off. Put the state back in the UI."""
+        self.async_write_ha_state()

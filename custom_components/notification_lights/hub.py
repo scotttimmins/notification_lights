@@ -84,6 +84,17 @@ class NotificationRuntime:
         self._listeners: list[Callable[[], None]] = []
 
     @property
+    def status(self) -> str:
+        """Plain-word state: preview, disabled, dismissed, showing or idle."""
+        if self.previewing:
+            return "preview"
+        if not self.enabled:
+            return "disabled"
+        if self.source_active and self.dismissed:
+            return "dismissed"
+        return "showing" if self.showing else "idle"
+
+    @property
     def showing(self) -> bool:
         """Whether the notification is currently drawn on lights in its scope."""
         if self.previewing:

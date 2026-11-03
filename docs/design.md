@@ -15,7 +15,7 @@ Registered in two steps: pick the `light.*_rgb` entity (the central room light i
 - **Priority**: unique number, lower paints on top. Overlaps resolved by paint order.
 - **Colour**: colour picker.
 - **Show during quiet hours**: toggle, default off.
-- **Entities**: Enabled (switch), Active (binary_sensor), Colour (light: on while showing, colour wheel saves the colour, on = preview, off = dismiss), Preview (button, 30 s), Dismiss (button). Clear-all service.
+- **Entities**: Enabled (switch), Active (binary_sensor), Colour (light: always on so the colour is always visible, colour wheel saves the colour, on = preview, off = no-op; `status` attribute says showing, idle, dismissed, disabled or preview), Preview (button, 30 s), Dismiss (button). Clear-all service.
 - A notification meant to override everything: whole footprint + top priority.
 
 ## Integration options
