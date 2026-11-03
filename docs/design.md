@@ -3,7 +3,7 @@
 Status: decided 2026-11-03 in a design review. Replaces `homeassistant-config/docs/notification-lights.md`. Terms: `CONTEXT.md`. Why an integration: `docs/adr/0001-custom-integration.md`.
 
 ## Delivery
-HACS custom integration `notification_lights`, requires `aqara_advanced_lighting` (HACS). Standalone repo, GitHub origin. Config flow with subentries. Dashboard: native HA device/entity pages first, then a generated dashboard strategy (JS) as a follow-up.
+HACS custom integration `notification_lights`, requires `aqara_advanced_lighting` (HACS), checked in the config flow (abort with install hint; `after_dependencies`, not `dependencies`, so the message shows). Standalone repo, GitHub origin. Config flow with subentries. Dashboard: native HA device/entity pages first, then a generated dashboard strategy (JS) as a follow-up.
 
 ## Notification light
 Registered by picking its `light.*_rgb` entity. Area and floor come from the HA registry. Per light: segments (default 26), offset, brightness, quiet-at-bedtime flag, idle policy (turn off, default; or restore previous state). Offset calibration: a Preview button showing eighth 1 for 30 s.

@@ -7,6 +7,9 @@
         "data": { "quiet_entity": "Quiet hours entity" }
       }
     },
-    "abort": { "already_configured": "Notification Lights is already set up." }
+    "abort": {
+      "already_configured": "Notification Lights is already set up.",
+      "aqara_missing": "Aqara Advanced Lighting is not set up. Install it through HACS (absent42/Aqara-Advanced-Lighting), add the integration, then try again."
+    }
   }
 }

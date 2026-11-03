@@ -9,7 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers import selector
 
-from .const import CONF_QUIET_ENTITY, DOMAIN
+from .const import AQARA_DOMAIN, CONF_QUIET_ENTITY, DOMAIN
 
 
 class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -21,6 +21,11 @@ class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Ask for the quiet-hours entity (optional) and create the entry."""
+        # A hard `dependencies` entry would fail with a generic error before this flow
+        # runs, so check here and tell the user what to install.
+        if not self.hass.config_entries.async_entries(AQARA_DOMAIN):
+            return self.async_abort(reason="aqara_missing")
+
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
 
