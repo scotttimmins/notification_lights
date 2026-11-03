@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Notification Lights",
-        "description": "Optionally pick an entity that means quiet hours (e.g. a bedtime helper).",
+        "description": "Optionally pick an entity that means quiet hours (e.g. a bedtime helper). Add lights and notifications afterwards from Configure.",
         "data": { "quiet_entity": "Quiet hours entity" }
       }
     },
@@ -12,111 +12,107 @@
       "aqara_missing": "Aqara Advanced Lighting is not set up. Install it through HACS (absent42/Aqara-Advanced-Lighting), add the integration, then try again."
     }
   },
-  "config_subentries": {
-    "light": {
-      "initiate_flow": { "user": "Add notification light" },
-      "entry_type": "Notification light",
-      "step": {
-        "user": {
-          "title": "Notification light",
-          "description": "Pick the _rgb entity of an Aqara ceiling light, not its central room light.",
-          "data": { "light": "Notification light" }
-        },
-        "details": {
-          "title": "Where it shows",
-          "description": "Rooms and floor are prefilled from the light's device. Leave both empty for a house-only light. List several rooms for an open-plan space.",
-          "data": {
-            "areas": "Rooms",
-            "floor": "Floor",
-            "segments": "Segments",
-            "offset": "Offset (LEDs)",
-            "brightness": "Brightness",
-            "quiet_hours": "Hide notifications during quiet hours",
-            "idle_policy": "When nothing is showing"
-          },
-          "data_description": {
-            "offset": "Rotates the picture so a footprint starts at the same physical place on every light."
-          }
-        },
-        "reconfigure": {
-          "title": "Where it shows",
-          "description": "Rooms and floor are prefilled from the light's device. Leave both empty for a house-only light. List several rooms for an open-plan space.",
-          "data": {
-            "areas": "Rooms",
-            "floor": "Floor",
-            "segments": "Segments",
-            "offset": "Offset (LEDs)",
-            "brightness": "Brightness",
-            "quiet_hours": "Hide notifications during quiet hours",
-            "idle_policy": "When nothing is showing"
-          },
-          "data_description": {
-            "offset": "Rotates the picture so a footprint starts at the same physical place on every light."
-          }
+  "options": {
+    "step": {
+      "init": {
+        "title": "Notification Lights",
+        "menu_options": {
+          "lights": "Notification lights",
+          "notifications": "Notifications",
+          "settings": "Quiet hours",
+          "done": "Done"
         }
       },
-      "error": {
-        "not_rgb": "Pick the _rgb entity (the outer ring), not the central room light.",
-        "already_added": "This light is already added.",
-        "offset_too_large": "Offset must be less than the number of segments."
+      "settings": {
+        "title": "Quiet hours",
+        "description": "While this entity is on, notifications without Show during quiet hours are hidden on lights marked quiet. Leave empty for no quiet hours.",
+        "data": { "quiet_entity": "Quiet hours entity" }
+      },
+      "lights": {
+        "title": "Notification lights",
+        "description": "{summary}",
+        "data": { "choice": "Add or edit" }
+      },
+      "light_pick": {
+        "title": "Add notification light",
+        "description": "Pick the _rgb entity of an Aqara ceiling light, not its central room light.",
+        "data": { "light": "Notification light" }
+      },
+      "light_details": {
+        "title": "{light}",
+        "description": "Rooms and floor are prefilled from the light's device. Leave both empty for a house-only light. List several rooms for an open-plan space.",
+        "data": {
+          "name": "Name",
+          "areas": "Rooms",
+          "floor": "Floor",
+          "segments": "Segments",
+          "offset": "Offset (LEDs)",
+          "brightness": "Brightness",
+          "quiet_hours": "Hide notifications during quiet hours",
+          "idle_policy": "When nothing is showing",
+          "remove": "Remove this light"
+        },
+        "data_description": {
+          "offset": "Rotates the picture so a footprint starts at the same physical place on every light."
+        }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Lower priority numbers paint on top.\n\n{summary}",
+        "data": { "choice": "Add or edit" }
+      },
+      "notification": {
+        "title": "Notification",
+        "description": "How it looks and where it shows. A notification follows its source exactly.",
+        "data": {
+          "name": "Name",
+          "colour": "Colour",
+          "footprint": "Footprint",
+          "priority": "Priority",
+          "show_during_quiet_hours": "Show during quiet hours",
+          "scope": "Scope",
+          "delay": "Source must hold for",
+          "remove": "Remove this notification"
+        },
+        "data_description": {
+          "delay": "Seconds the source must stay active before the notification shows."
+        }
+      },
+      "notification_room": {
+        "title": "Room",
+        "data": { "scope_area": "Room" }
+      },
+      "notification_floor": {
+        "title": "Floor",
+        "data": { "scope_floor": "Floor" }
+      },
+      "notification_source": {
+        "title": "What raises it",
+        "menu_options": {
+          "notification_entities": "Entities in a state",
+          "notification_template": "A template"
+        }
+      },
+      "notification_entities": {
+        "title": "Source entities",
+        "description": "Active while any of these entities is in the given state.",
+        "data": {
+          "source_entities": "Entities",
+          "source_state": "Active state"
+        }
+      },
+      "notification_template": {
+        "title": "Source template",
+        "description": "Active while the template renders true.",
+        "data": { "source_template": "Template" }
       }
     },
-    "notification": {
-      "initiate_flow": { "user": "Add notification" },
-      "entry_type": "Notification",
-      "step": {
-        "user": {
-          "title": "Notification",
-          "description": "How it looks and where it shows. A notification follows its source exactly. Lower priority numbers paint on top.",
-          "data": {
-            "name": "Name",
-            "colour": "Colour",
-            "footprint": "Footprint",
-            "priority": "Priority",
-            "show_during_quiet_hours": "Show during quiet hours",
-            "scope": "Scope",
-            "delay": "Source must hold for"
-          },
-          "data_description": {
-            "delay": "Seconds the source must stay active before the notification shows."
-          }
-        },
-        "scope_room": {
-          "title": "Room",
-          "data": { "scope_area": "Room" }
-        },
-        "scope_floor": {
-          "title": "Floor",
-          "data": { "scope_floor": "Floor" }
-        },
-        "source": {
-          "title": "What raises it",
-          "menu_options": {
-            "entities": "Entities in a state",
-            "template": "A template"
-          }
-        },
-        "entities": {
-          "title": "Source entities",
-          "description": "Active while any of these entities is in the given state.",
-          "data": {
-            "source_entities": "Entities",
-            "source_state": "Active state"
-          }
-        },
-        "template": {
-          "title": "Source template",
-          "description": "Active while the template renders true.",
-          "data": { "source_template": "Template" }
-        },
-        "reconfigure": {
-          "title": "Notification"
-        }
-      },
-      "error": {
-        "priority_taken": "Another notification already uses this priority.",
-        "invalid_template": "This template is not valid."
-      }
+    "error": {
+      "not_rgb": "Pick the _rgb entity (the outer ring), not the central room light.",
+      "already_added": "This light is already added.",
+      "offset_too_large": "Offset must be less than the number of segments.",
+      "priority_taken": "Another notification already uses this priority.",
+      "invalid_template": "This template is not valid."
     }
   },
   "selector": {

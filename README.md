@@ -10,8 +10,10 @@ Requires [Aqara Advanced Lighting](https://github.com/absent42/Aqara-Advanced-Li
 3. Settings, Devices and services, Add integration, Notification Lights. Optionally pick a quiet-hours entity.
 
 ## Set up
-- **Add notification light**: pick the `_rgb` entity (the ring, not the central room light). Rooms and floor are prefilled from its device; list several rooms for an open-plan space, or none for a house-only light. Edit it later to calibrate the offset: press **Calibration preview** on the light, and if eighth 1 starts further round than on your other lights, raise the offset by that many LEDs.
-- **Add notification**: name, colour, footprint (whole, half, quarter or eighth), priority, scope (house, floor or room), then its source.
+Everything is managed from the integration's **Configure** dialog, as groups:
+- **Notification lights**: the list of your lights, with their rooms. Pick *Add a notification light* and choose the `_rgb` entity (the ring, not the central room light). The name defaults to the entity's name; rooms and floor are prefilled from its device (list several rooms for an open-plan space, or none for a house-only light). Pick a light in the list to edit or remove it, e.g. to calibrate the offset: press **Calibration preview** on the light, and if eighth 1 starts further round than on your other lights, raise the offset by that many LEDs.
+- **Notifications**: the list by priority. Pick *Add a notification*: name, colour, footprint (whole, half, quarter or eighth), priority, scope (house, floor or room), then its source. Pick one in the list to edit or remove it.
+- **Quiet hours**: the entity that means quiet hours (a bedtime helper, a schedule). Change or clear it here at any time.
 
 A notification shows exactly while its source is active. Lower priority numbers paint on top. For a notification that overrides everything, use the whole footprint and the top priority.
 

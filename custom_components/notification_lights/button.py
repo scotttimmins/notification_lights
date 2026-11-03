@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CONF_LIGHT, DOMAIN
+from .const import CONF_LIGHT, CONF_NAME, DOMAIN
 from .entity import NotificationEntity
 
 
@@ -32,7 +32,7 @@ async def async_setup_entry(
         )
     for subentry_id, light in hub.lights.items():
         async_add_entities(
-            [LightPreviewButton(hub, subentry_id, light[CONF_LIGHT])],
+            [LightPreviewButton(hub, subentry_id, light.get(CONF_NAME) or light[CONF_LIGHT])],
             config_subentry_id=subentry_id,
         )
     async_add_entities([DismissAllButton(hub, entry)])
@@ -74,14 +74,14 @@ class LightPreviewButton(ButtonEntity):
         Args:
             hub: The hub.
             subentry_id: The light's subentry id.
-            light: The light entity id.
+            light: The light's display name.
         """
         self._hub = hub
         self._subentry_id = subentry_id
         self._attr_unique_id = f"{subentry_id}_preview"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, subentry_id)},
-            name=f"{light} notification light",
+            name=light,
             manufacturer="Notification Lights",
         )
 
