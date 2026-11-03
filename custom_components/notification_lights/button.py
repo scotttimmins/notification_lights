@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CONF_LIGHT, CONF_NAME, DOMAIN
+from .const import CONF_NAME, DOMAIN, LIGHTS_PARENT, NOTIFICATIONS_PARENT
 from .entity import NotificationEntity
 
 
@@ -32,7 +32,7 @@ async def async_setup_entry(
         )
     for subentry_id, light in hub.lights.items():
         async_add_entities(
-            [LightPreviewButton(hub, subentry_id, light.get(CONF_NAME) or light[CONF_LIGHT])],
+            [LightPreviewButton(hub, entry, subentry_id, light.get(CONF_NAME) or light["light"])],
             config_subentry_id=subentry_id,
         )
     async_add_entities([DismissAllButton(hub, entry)])
@@ -68,11 +68,12 @@ class LightPreviewButton(ButtonEntity):
     _attr_has_entity_name = True
     _attr_name = "Calibration preview"
 
-    def __init__(self, hub, subentry_id: str, light: str) -> None:
+    def __init__(self, hub, entry: ConfigEntry, subentry_id: str, light: str) -> None:
         """Create the button.
 
         Args:
             hub: The hub.
+            entry: The integration config entry.
             subentry_id: The light's subentry id.
             light: The light's display name.
         """
@@ -83,6 +84,7 @@ class LightPreviewButton(ButtonEntity):
             identifiers={(DOMAIN, subentry_id)},
             name=light,
             manufacturer="Notification Lights",
+            via_device=(DOMAIN, f"{entry.entry_id}_{LIGHTS_PARENT}"),
         )
 
     async def async_press(self) -> None:
@@ -106,8 +108,8 @@ class DismissAllButton(ButtonEntity):
         self._hub = hub
         self._attr_unique_id = f"{entry.entry_id}_dismiss_all"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Notification Lights",
+            identifiers={(DOMAIN, f"{entry.entry_id}_{NOTIFICATIONS_PARENT}")},
+            name="Notifications",
             manufacturer="Notification Lights",
         )
 

@@ -6,7 +6,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN
+from .const import DOMAIN, NOTIFICATIONS_PARENT
 from .hub import NotificationRuntime
 
 
@@ -31,6 +31,7 @@ class NotificationEntity(Entity):
             identifiers={(DOMAIN, runtime.subentry_id)},
             name=f"{runtime.name} notification",
             manufacturer="Notification Lights",
+            via_device=(DOMAIN, f"{runtime.hub.entry.entry_id}_{NOTIFICATIONS_PARENT}"),
         )
 
     async def async_added_to_hass(self) -> None:

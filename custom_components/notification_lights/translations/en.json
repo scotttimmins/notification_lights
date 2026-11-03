@@ -4,7 +4,9 @@
       "user": {
         "title": "Notification Lights",
         "description": "Optionally pick an entity that means quiet hours (e.g. a bedtime helper). Add lights and notifications afterwards from Configure.",
-        "data": { "quiet_entity": "Quiet hours entity" }
+        "data": {
+          "quiet_entity": "Quiet hours entity"
+        }
       }
     },
     "abort": {
@@ -26,17 +28,23 @@
       "settings": {
         "title": "Quiet hours",
         "description": "While this entity is on, notifications without Show during quiet hours are hidden on lights marked quiet. Leave empty for no quiet hours.",
-        "data": { "quiet_entity": "Quiet hours entity" }
+        "data": {
+          "quiet_entity": "Quiet hours entity"
+        }
       },
       "lights": {
         "title": "Notification lights",
         "description": "{summary}",
-        "data": { "choice": "Add or edit" }
+        "data": {
+          "choice": "Add or edit"
+        }
       },
       "light_pick": {
         "title": "Add notification light",
         "description": "Pick the _rgb entity of an Aqara ceiling light, not its central room light.",
-        "data": { "light": "Notification light" }
+        "data": {
+          "light": "Notification light"
+        }
       },
       "light_details": {
         "title": "{light}",
@@ -59,7 +67,9 @@
       "notifications": {
         "title": "Notifications",
         "description": "Lower priority numbers paint on top.\n\n{summary}",
-        "data": { "choice": "Add or edit" }
+        "data": {
+          "choice": "Add or edit"
+        }
       },
       "notification": {
         "title": "Notification",
@@ -80,11 +90,15 @@
       },
       "notification_room": {
         "title": "Room",
-        "data": { "scope_area": "Room" }
+        "data": {
+          "scope_area": "Room"
+        }
       },
       "notification_floor": {
         "title": "Floor",
-        "data": { "scope_floor": "Floor" }
+        "data": {
+          "scope_floor": "Floor"
+        }
       },
       "notification_source": {
         "title": "What raises it",
@@ -104,7 +118,9 @@
       "notification_template": {
         "title": "Source template",
         "description": "Active while the template renders true.",
-        "data": { "source_template": "Template" }
+        "data": {
+          "source_template": "Template"
+        }
       }
     },
     "error": {
@@ -155,6 +171,113 @@
     "dismiss_all": {
       "name": "Dismiss all",
       "description": "Dismiss every active notification until its source next starts."
+    }
+  },
+  "config_subentries": {
+    "light": {
+      "initiate_flow": {
+        "user": "Add notification light"
+      },
+      "entry_type": "Notification light",
+      "step": {
+        "light_pick": {
+          "title": "Add notification light",
+          "description": "Pick the _rgb entity of an Aqara ceiling light, not its central room light.",
+          "data": {
+            "light": "Notification light"
+          }
+        },
+        "light_details": {
+          "title": "{light}",
+          "description": "Rooms and floor are prefilled from the light's device. Leave both empty for a house-only light. List several rooms for an open-plan space.",
+          "data": {
+            "name": "Name",
+            "areas": "Rooms",
+            "floor": "Floor",
+            "segments": "Segments",
+            "offset": "Offset (LEDs)",
+            "brightness": "Brightness",
+            "quiet_hours": "Hide notifications during quiet hours",
+            "idle_policy": "When nothing is showing"
+          },
+          "data_description": {
+            "offset": "Rotates the picture so a footprint starts at the same physical place on every light."
+          }
+        }
+      },
+      "error": {
+        "not_rgb": "Pick the _rgb entity (the outer ring), not the central room light.",
+        "already_added": "This light is already added.",
+        "offset_too_large": "Offset must be less than the number of segments."
+      },
+      "abort": {
+        "reconfigure_successful": "Saved."
+      }
+    },
+    "notification": {
+      "initiate_flow": {
+        "user": "Add notification"
+      },
+      "entry_type": "Notification",
+      "step": {
+        "notification": {
+          "title": "Notification",
+          "description": "How it looks and where it shows. A notification follows its source exactly.",
+          "data": {
+            "name": "Name",
+            "colour": "Colour",
+            "footprint": "Footprint",
+            "priority": "Priority",
+            "show_during_quiet_hours": "Show during quiet hours",
+            "scope": "Scope",
+            "delay": "Source must hold for"
+          },
+          "data_description": {
+            "delay": "Seconds the source must stay active before the notification shows."
+          }
+        },
+        "notification_room": {
+          "title": "Room",
+          "data": {
+            "scope_area": "Room"
+          }
+        },
+        "notification_floor": {
+          "title": "Floor",
+          "data": {
+            "scope_floor": "Floor"
+          }
+        },
+        "notification_source": {
+          "title": "What raises it",
+          "menu_options": {
+            "notification_entities": "Entities in a state",
+            "notification_template": "A template"
+          }
+        },
+        "notification_entities": {
+          "title": "Source entities",
+          "description": "Active while any of these entities is in the given state.",
+          "data": {
+            "source_entities": "Entities",
+            "source_state": "Active state"
+          }
+        },
+        "notification_template": {
+          "title": "Source template",
+          "description": "Active while the template renders true.",
+          "data": {
+            "source_template": "Template"
+          }
+        }
+      },
+      "error": {
+        "priority_taken": "Another notification already uses this priority.",
+        "invalid_template": "This template is not valid."
+      },
+      "abort": {
+        "reconfigure_successful": "Saved."
+      }
     }
   }
 }
