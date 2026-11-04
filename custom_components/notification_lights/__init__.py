@@ -119,26 +119,27 @@ def _create_parent_devices(hass: HomeAssistant, entry: NotificationLightsConfigE
 
 
 def _prune_devices(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
-    """Remove devices of deleted notifications and of older layouts.
+    """Remove devices of older layouts and entities of deleted notifications.
 
-    Kept: the two group devices and one device per current notification. Anything else
-    this entry owns (a removed notification, the pre-grouping device) goes, with its
-    entities.
+    Kept: the two group devices. Per-notification devices from earlier versions go
+    (their entities were already moved onto the Notifications device by setup).
+    Entities whose notification no longer exists are removed too.
 
     Args:
         hass: Home Assistant instance.
         entry: The config entry.
     """
-    keep = {
-        f"{entry.entry_id}_{LIGHTS_PARENT}",
-        f"{entry.entry_id}_{NOTIFICATIONS_PARENT}",
-        *entry.runtime_data.notifications,
-    }
+    keep = {f"{entry.entry_id}_{LIGHTS_PARENT}", f"{entry.entry_id}_{NOTIFICATIONS_PARENT}"}
     registry = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
         ours = {i for d, i in device.identifiers if d == DOMAIN}
         if ours and not ours & keep:
             registry.async_remove_device(device.id)
+    ids = (*entry.runtime_data.notifications, *entry.runtime_data.lights)
+    entities = er.async_get(hass)
+    for ent in er.async_entries_for_config_entry(entities, entry.entry_id):
+        if not ent.unique_id.startswith((entry.entry_id, *ids)):
+            entities.async_remove(ent.entity_id)
 
 
 async def async_migrate_entry(
