@@ -8,7 +8,7 @@ import types
 pkg = pathlib.Path(__file__).parent.parent / "custom_components" / "notification_lights"
 sys.modules.setdefault("notification_lights", types.ModuleType("notification_lights"))
 sys.modules["notification_lights"].__path__ = [str(pkg)]
-for name in ("const", "footprint", "paint", "scope", "validation", "summary"):
+for name in ("const", "footprint", "paint", "scope", "validation", "summary", "guide"):
     spec = importlib.util.spec_from_file_location(f"notification_lights.{name}", pkg / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[f"notification_lights.{name}"] = module

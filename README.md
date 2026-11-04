@@ -30,6 +30,11 @@ strategy:
 
 It is built when the dashboard loads, so reload the page after adding or removing items.
 
+## Print a guide
+Press **Print guide** (on the Notifications device, and on the dashboard). A notification appears with a link to a printable page: one card per notification with its colour, a ring diagram with its section highlighted, when it is raised, and where it shows, plus your lights. Open it and print from the browser (Ctrl+P) to any printer, connected to Home Assistant or not, or save it as PDF. The link is signed and works for 10 minutes. If colours are missing, turn on background graphics in the print dialog.
+
+To print from an automation, call the `notification_lights.print_sheet` action: it returns `url` and `html` (use a response variable), and also fires the `notification_lights_print_sheet` event with the link, so you can hand it to whatever print integration you use.
+
 ## Source examples
 Entities in a state: pick the entities and the state (default `on`); active while any matches. The delay field makes the source hold for N seconds first.
 

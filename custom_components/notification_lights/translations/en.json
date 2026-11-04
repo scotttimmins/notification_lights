@@ -171,6 +171,10 @@
     "dismiss_all": {
       "name": "Dismiss all",
       "description": "Dismiss every active notification until its source next starts."
+    },
+    "print_sheet": {
+      "name": "Print sheet",
+      "description": "Return the printable guide (HTML and a link valid for 10 minutes) and fire the notification_lights_print_sheet event with the link, so an automation can send it to a printer."
     }
   }
 }

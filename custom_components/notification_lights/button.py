@@ -10,6 +10,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import CONF_NAME, DOMAIN, LIGHTS_PARENT, NOTIFICATIONS_PARENT
 from .entity import NotificationEntity
+from .printing import async_print_sheet
 
 
 async def async_setup_entry(
@@ -31,7 +32,7 @@ async def async_setup_entry(
         async_add_entities(
             [LightPreviewButton(hub, entry, item_id, light.get(CONF_NAME) or light["light"])]
         )
-    async_add_entities([DismissAllButton(hub, entry)])
+    async_add_entities([DismissAllButton(hub, entry), PrintGuideButton(entry)])
 
 
 class PreviewButton(NotificationEntity, ButtonEntity):
@@ -109,3 +110,26 @@ class DismissAllButton(ButtonEntity):
     async def async_press(self) -> None:
         """Dismiss all."""
         self._hub.dismiss_all()
+
+
+class PrintGuideButton(ButtonEntity):
+    """Make the printable guide: posts a link to a page with every notification, its colour and its place."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Print guide"
+    _attr_extra_state_attributes = {"part": "print_guide"}
+
+    def __init__(self, entry: ConfigEntry) -> None:
+        """Create the button.
+
+        Args:
+            entry: The integration's config entry.
+        """
+        self._attr_unique_id = f"{entry.entry_id}_print_guide"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry.entry_id}_{NOTIFICATIONS_PARENT}")}
+        )
+
+    async def async_press(self) -> None:
+        """Post the guide link."""
+        await async_print_sheet(self.hass, notify=True)

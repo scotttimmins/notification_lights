@@ -31,6 +31,7 @@ function add(id, attrs) {
   if (name !== "Bins") add(`light.${slug}_colour`, { notification: name, part: "colour", status: "idle" });
 });
 add("button.dismiss_all", { part: "dismiss_all" });
+add("button.print_guide", { part: "print_guide" });
 add("button.bed_cal", { part: "calibration", light: "Bedroom" });
 add("button.dining_cal", { part: "calibration", light: "Dining" });
 entities["sensor.other"] = { platform: "other" };
@@ -50,6 +51,10 @@ states["sensor.other"] = { attributes: { part: "active", notification: "Nope" } 
   assert(!names.some((n) => n.includes("Nope")), "other platforms ignored");
   assert(view.sections.length === 4, "overview + 2 columns of notifications + lights, got " + view.sections.length);
   const flat = JSON.stringify(view);
+  // One tap must press: every Preview/Dismiss button has a press action (no more-info popup).
+  const rows = view.sections.flatMap((s) => s.cards).filter((c) => c.type === "vertical-stack").flatMap((c) => c.cards[1].entities).filter((r) => r.type === "buttons").flatMap((r) => r.entities);
+  assert(rows.length === 16 && rows.every((b) => b.tap_action.perform_action === "button.press" && b.tap_action.target.entity_id === b.entity), "buttons press in one tap");
+  assert(flat.includes("button.print_guide"), "print guide button");
   assert(flat.includes("button.dismiss_all") && flat.includes("button.bed_cal"), "dismiss all and lights present");
   const empty = await Strategy.generate({ title: "X" }, { entities: {}, states: {} });
   assert(JSON.stringify(empty).includes("No notifications yet"), "empty state");

@@ -27,3 +27,7 @@ Quiet-hours entity (optional): any `input_boolean`, `binary_sensor`, `schedule` 
 
 ## Out of scope now
 Accent LEDs, Aurora bulbs, notifications shown only in occupied rooms, auto-discovery of lights, drag-to-reorder priority.
+
+## Printable guide
+A Print guide button (and the `print_sheet` action) produces a self-contained, print-styled HTML page: per notification its colour, a ring diagram with the footprint's slots highlighted, its source in words and where it shows, plus the lights. It is served at `/api/notification_lights/guide` behind login, so the button posts a signed link (10 minutes) as a Home Assistant notification; anyone prints it from the browser to any printer or saves it as PDF. For printers wired into Home Assistant, the action returns the link and HTML, and a `notification_lights_print_sheet` event carries the link, so an automation can pass it to the user's own print integration. No printer drivers or PDF library in the integration.
+

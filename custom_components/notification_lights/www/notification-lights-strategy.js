@@ -25,6 +25,7 @@ function readModel(hass) {
   const byName = new Map();
   const lights = [];
   let dismissAll = null;
+  let printGuide = null;
 
   for (const [entityId, entry] of Object.entries(hass.entities || {})) {
     if (entry.platform !== PLATFORM) continue;
@@ -33,6 +34,8 @@ function readModel(hass) {
 
     if (attrs.part === "dismiss_all") {
       dismissAll = entityId;
+    } else if (attrs.part === "print_guide") {
+      printGuide = entityId;
     } else if (attrs.part === "calibration") {
       lights.push({ name: attrs.light, entityId });
     } else if (attrs.notification) {
@@ -52,7 +55,20 @@ function readModel(hass) {
     .filter((n) => n.active)
     .sort((a, b) => a.priority - b.priority);
   lights.sort((a, b) => a.name.localeCompare(b.name));
-  return { notifications, lights, dismissAll };
+  return { notifications, lights, dismissAll, printGuide };
+}
+
+/**
+ * Press a button entity in one tap (the default would open its more-info dialog first).
+ * @param {string} entityId A button entity.
+ * @returns {object} A tap action.
+ */
+function press(entityId) {
+  return {
+    action: "perform-action",
+    perform_action: "button.press",
+    target: { entity_id: entityId },
+  };
 }
 
 /**
@@ -70,8 +86,8 @@ function notificationCard(n) {
   ];
   if (n.enabled) rows.push({ entity: n.enabled, name: "Enabled" });
   const buttons = [];
-  if (n.preview) buttons.push({ entity: n.preview, name: "Preview", icon: "mdi:eye" });
-  if (n.dismiss) buttons.push({ entity: n.dismiss, name: "Dismiss", icon: "mdi:bell-off" });
+  if (n.preview) buttons.push({ entity: n.preview, name: "Preview", icon: "mdi:eye", tap_action: press(n.preview) });
+  if (n.dismiss) buttons.push({ entity: n.dismiss, name: "Dismiss", icon: "mdi:bell-off", tap_action: press(n.dismiss) });
   if (buttons.length) rows.push({ type: "buttons", entities: buttons });
 
   return {
@@ -99,7 +115,7 @@ class NotificationLightsStrategy extends HTMLElement {
    * @returns {Promise<object>} A Lovelace dashboard config.
    */
   static async generate(config, hass) {
-    const { notifications, lights, dismissAll } = readModel(hass);
+    const { notifications, lights, dismissAll, printGuide } = readModel(hass);
 
     const overview = [
       { type: "heading", heading: config.title || "Notifications", icon: "mdi:bell-ring" },
@@ -118,11 +134,17 @@ class NotificationLightsStrategy extends HTMLElement {
         name: "Dismiss all",
         icon: "mdi:bell-off-outline",
         show_state: false,
-        tap_action: {
-          action: "perform-action",
-          perform_action: "button.press",
-          target: { entity_id: dismissAll },
-        },
+        tap_action: press(dismissAll),
+      });
+    }
+    if (printGuide) {
+      overview.push({
+        type: "button",
+        entity: printGuide,
+        name: "Print guide",
+        icon: "mdi:printer",
+        show_state: false,
+        tap_action: press(printGuide),
       });
     }
     if (!notifications.length) {

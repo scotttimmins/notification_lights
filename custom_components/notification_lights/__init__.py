@@ -8,7 +8,7 @@ from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
@@ -20,8 +20,10 @@ from .const import (
     LIGHTS_PARENT,
     NOTIFICATIONS_PARENT,
     SERVICE_DISMISS_ALL,
+    SERVICE_PRINT_SHEET,
 )
 from .hub import Hub
+from .printing import GuideView, async_print_sheet
 
 PLATFORMS = [Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.LIGHT]
 STRATEGY_FILE = "notification-lights-strategy.js"
@@ -45,6 +47,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             entry.runtime_data.dismiss_all()
 
     hass.services.async_register(DOMAIN, SERVICE_DISMISS_ALL, _dismiss_all)
+
+    async def _print_sheet(call: ServiceCall) -> ServiceResponse:
+        return await async_print_sheet(hass)
+
+    hass.services.async_register(
+        DOMAIN, SERVICE_PRINT_SHEET, _print_sheet, supports_response=SupportsResponse.ONLY
+    )
+    hass.http.register_view(GuideView())
     await _register_dashboard_strategy(hass)
     return True
 

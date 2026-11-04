@@ -51,3 +51,4 @@ NOTIFICATIONS_PARENT = "notifications"
 
 PREVIEW_SECONDS = 30
 SERVICE_DISMISS_ALL = "dismiss_all"
+SERVICE_PRINT_SHEET = "print_sheet"
