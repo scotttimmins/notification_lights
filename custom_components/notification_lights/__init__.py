@@ -84,7 +84,7 @@ async def async_setup_entry(
     entry.runtime_data = hub
     await hub.async_start()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    _remove_old_device(hass, entry)
+    _prune_devices(hass, entry)
     # Adding, editing or removing a light or notification rebuilds everything.
     entry.async_on_unload(entry.add_update_listener(_reload))
     return True
@@ -108,17 +108,27 @@ def _create_parent_devices(hass: HomeAssistant, entry: NotificationLightsConfigE
         )
 
 
-def _remove_old_device(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
-    """Drop the pre-grouping integration device once nothing is on it.
+def _prune_devices(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
+    """Remove devices of deleted notifications and of older layouts.
+
+    Kept: the two group devices and one device per current notification. Anything else
+    this entry owns (a removed notification, the pre-grouping device) goes, with its
+    entities.
 
     Args:
         hass: Home Assistant instance.
         entry: The config entry.
     """
+    keep = {
+        f"{entry.entry_id}_{LIGHTS_PARENT}",
+        f"{entry.entry_id}_{NOTIFICATIONS_PARENT}",
+        *entry.runtime_data.notifications,
+    }
     registry = dr.async_get(hass)
-    old = registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
-    if old and not er.async_entries_for_device(er.async_get(hass), old.id):
-        registry.async_remove_device(old.id)
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        ours = {i for d, i in device.identifiers if d == DOMAIN}
+        if ours and not ours & keep:
+            registry.async_remove_device(device.id)
 
 
 async def async_migrate_entry(

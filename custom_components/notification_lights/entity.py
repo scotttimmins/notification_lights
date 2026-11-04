@@ -28,10 +28,14 @@ class NotificationEntity(Entity):
         """
         self.runtime = runtime
         self._part = key
-        self._attr_name = f"{runtime.name} {name}"
+        self._attr_name = name
         self._attr_unique_id = f"{runtime.item_id}_{key}"
+        # One device per notification, nested under Notifications: clicking it opens its entities.
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{runtime.hub.entry.entry_id}_{NOTIFICATIONS_PARENT}")},
+            identifiers={(DOMAIN, runtime.item_id)},
+            name=runtime.name,
+            manufacturer="Notification Lights",
+            via_device=(DOMAIN, f"{runtime.hub.entry.entry_id}_{NOTIFICATIONS_PARENT}"),
         )
 
     @property
