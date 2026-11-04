@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CONF_NAME, DOMAIN, LIGHTS_PARENT, NOTIFICATIONS_PARENT
+from .const import CONF_NAME, DOMAIN, GENERAL_DEVICE
 from .entity import NotificationEntity
 from .printing import async_print_sheet
 
@@ -27,10 +27,13 @@ async def async_setup_entry(
     """
     hub = entry.runtime_data
     for item_id, runtime in hub.notifications.items():
-        async_add_entities([PreviewButton(runtime), DismissButton(runtime)])
+        async_add_entities(
+            [PreviewButton(runtime), DismissButton(runtime)], config_subentry_id=item_id
+        )
     for item_id, light in hub.lights.items():
         async_add_entities(
-            [LightPreviewButton(hub, entry, item_id, light.get(CONF_NAME) or light["light"])]
+            [LightPreviewButton(hub, item_id, light.get(CONF_NAME) or light["light"])],
+            config_subentry_id=item_id,
         )
     async_add_entities([DismissAllButton(hub, entry), PrintGuideButton(entry)])
 
@@ -64,12 +67,11 @@ class LightPreviewButton(ButtonEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, hub, entry: ConfigEntry, item_id: str, light: str) -> None:
+    def __init__(self, hub, item_id: str, light: str) -> None:
         """Create the button.
 
         Args:
             hub: The hub.
-            entry: The integration config entry.
             item_id: The light's id.
             light: The light's display name.
         """
@@ -79,7 +81,7 @@ class LightPreviewButton(ButtonEntity):
         self._attr_name = f"{light} calibration preview"
         self._attr_extra_state_attributes = {"part": "calibration", "light": light}
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_{LIGHTS_PARENT}")}
+            identifiers={(DOMAIN, item_id)}, name=light, manufacturer="Notification Lights"
         )
 
     async def async_press(self) -> None:
@@ -104,7 +106,7 @@ class DismissAllButton(ButtonEntity):
         self._hub = hub
         self._attr_unique_id = f"{entry.entry_id}_dismiss_all"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_{NOTIFICATIONS_PARENT}")}
+            identifiers={(DOMAIN, f"{entry.entry_id}_{GENERAL_DEVICE}")}, name="Notification Lights"
         )
 
     async def async_press(self) -> None:
@@ -127,7 +129,7 @@ class PrintGuideButton(ButtonEntity):
         """
         self._attr_unique_id = f"{entry.entry_id}_print_guide"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_{NOTIFICATIONS_PARENT}")}
+            identifiers={(DOMAIN, f"{entry.entry_id}_{GENERAL_DEVICE}")}, name="Notification Lights"
         )
 
     async def async_press(self) -> None:

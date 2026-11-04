@@ -27,7 +27,7 @@ async def async_setup_entry(
     """
     hub = entry.runtime_data
     for item_id, runtime in hub.notifications.items():
-        async_add_entities([ActiveSensor(runtime)])
+        async_add_entities([ActiveSensor(runtime)], config_subentry_id=item_id)
 
 
 class ActiveSensor(NotificationEntity, BinarySensorEntity):

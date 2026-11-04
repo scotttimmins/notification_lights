@@ -25,7 +25,8 @@ async def async_setup_entry(
         async_add_entities: Callback to add entities.
     """
     hub = entry.runtime_data
-    async_add_entities([ColourLight(runtime) for runtime in hub.notifications.values()])
+    for item_id, runtime in hub.notifications.items():
+        async_add_entities([ColourLight(runtime)], config_subentry_id=item_id)
 
 
 class ColourLight(NotificationEntity, LightEntity):

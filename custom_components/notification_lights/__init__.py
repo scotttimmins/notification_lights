@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import MappingProxyType
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     DOMAIN,
+    GENERAL_DEVICE,
     KIND_LIGHT,
     KIND_NOTIFICATION,
-    LIGHTS_PARENT,
-    NOTIFICATIONS_PARENT,
     SERVICE_DISMISS_ALL,
     SERVICE_PRINT_SHEET,
 )
@@ -89,7 +88,7 @@ async def async_setup_entry(
     Returns:
         True when set up.
     """
-    _create_parent_devices(hass, entry)
+    _create_general_device(hass, entry)
     hub = Hub(hass, entry)
     entry.runtime_data = hub
     await hub.async_start()
@@ -100,55 +99,45 @@ async def async_setup_entry(
     return True
 
 
-def _create_parent_devices(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
-    """Create the two group devices every light and notification nests under.
+def _create_general_device(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
+    """Create the entry-level device that holds Dismiss all and Print guide.
 
     Args:
         hass: Home Assistant instance.
         entry: The config entry.
     """
-    registry = dr.async_get(hass)
-    for key, name in ((LIGHTS_PARENT, "Notification lights"), (NOTIFICATIONS_PARENT, "Notifications")):
-        registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, f"{entry.entry_id}_{key}")},
-            name=name,
-            manufacturer="Notification Lights",
-            entry_type=dr.DeviceEntryType.SERVICE,
-        )
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{entry.entry_id}_{GENERAL_DEVICE}")},
+        name="Notification Lights",
+        manufacturer="Notification Lights",
+        entry_type=dr.DeviceEntryType.SERVICE,
+    )
 
 
 def _prune_devices(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
-    """Remove devices of older layouts and entities of deleted notifications.
-
-    Kept: the two group devices. Per-notification devices from earlier versions go
-    (their entities were already moved onto the Notifications device by setup).
-    Entities whose notification no longer exists are removed too.
+    """Remove the group devices of older layouts, after their entities have moved.
 
     Args:
         hass: Home Assistant instance.
         entry: The config entry.
     """
-    keep = {f"{entry.entry_id}_{LIGHTS_PARENT}", f"{entry.entry_id}_{NOTIFICATIONS_PARENT}"}
+    keep = {f"{entry.entry_id}_{GENERAL_DEVICE}", *entry.subentries}
     registry = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
         ours = {i for d, i in device.identifiers if d == DOMAIN}
         if ours and not ours & keep:
             registry.async_remove_device(device.id)
-    ids = (*entry.runtime_data.notifications, *entry.runtime_data.lights)
-    entities = er.async_get(hass)
-    for ent in er.async_entries_for_config_entry(entities, entry.entry_id):
-        if not ent.unique_id.startswith((entry.entry_id, *ids)):
-            entities.async_remove(ent.entity_id)
 
 
 async def async_migrate_entry(
     hass: HomeAssistant, entry: NotificationLightsConfigEntry
 ) -> bool:
-    """Move lights and notifications from subentries into the entry's options.
+    """Move lights and notifications from the entry's options into subentries.
 
-    Subentries made the integration page list every item on its own. Item ids stay the
-    same, so unique ids and entity ids survive; entities move onto the two group devices.
+    Version 1 already had subentries. Version 2 kept the items in options; each becomes a
+    subentry with the same id, so unique ids and entity ids survive and entities move onto
+    the new per-item devices when the entry sets up.
 
     Args:
         hass: Home Assistant instance.
@@ -157,40 +146,26 @@ async def async_migrate_entry(
     Returns:
         True when the entry is at the current version.
     """
-    if entry.version == 1:
-        _create_parent_devices(hass, entry)
-        devices = dr.async_get(hass)
-        parent = {
-            kind: devices.async_get_device(
-                identifiers={(DOMAIN, f"{entry.entry_id}_{key}")}
-            ).id
-            for kind, key in ((KIND_LIGHT, LIGHTS_PARENT), (KIND_NOTIFICATION, NOTIFICATIONS_PARENT))
-        }
-        options: dict = {KIND_LIGHT: {}, KIND_NOTIFICATION: {}}
-        kind_of = {}
-        for sid, sub in entry.subentries.items():
-            kind_of[sid] = KIND_LIGHT if sub.subentry_type == "light" else KIND_NOTIFICATION
-            options[kind_of[sid]][sid] = dict(sub.data)
-        registry = er.async_get(hass)
-        # Move entities off the subentries first: removing a subentry deletes its entities.
-        for ent in er.async_entries_for_config_entry(registry, entry.entry_id):
-            if ent.config_subentry_id in kind_of:
-                registry.async_update_entity(
-                    ent.entity_id,
-                    config_subentry_id=None,
-                    device_id=parent[kind_of[ent.config_subentry_id]],
+    if entry.version < 3:
+        for old_key, kind in (("lights", KIND_LIGHT), ("notifications", KIND_NOTIFICATION)):
+            for item_id, data in entry.options.get(old_key, {}).items():
+                hass.config_entries.async_add_subentry(
+                    entry,
+                    ConfigSubentry(
+                        data=MappingProxyType(dict(data)),
+                        subentry_type=kind,
+                        title=data.get("name") or data["light"],
+                        unique_id=None,
+                        subentry_id=item_id,
+                    ),
                 )
-        for sid in kind_of:
-            hass.config_entries.async_remove_subentry(entry, sid)
-        hass.config_entries.async_update_entry(
-            entry, options={**entry.options, **options}, version=2
-        )
+        hass.config_entries.async_update_entry(entry, options={}, version=3)
     return True
 
 
 async def _reload(hass: HomeAssistant, entry: NotificationLightsConfigEntry) -> None:
     """Reload after an option changed, unless the hub made the change itself (a colour)."""
-    if entry.runtime_data.options_applied(entry.options):
+    if entry.runtime_data.is_applied():
         return
     await hass.config_entries.async_reload(entry.entry_id)
 

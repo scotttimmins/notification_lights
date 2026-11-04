@@ -8,7 +8,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN, NOTIFICATIONS_PARENT
+from .const import DOMAIN
 from .hub import NotificationRuntime
 
 
@@ -30,9 +30,11 @@ class NotificationEntity(Entity):
         self._part = key
         self._attr_name = name
         self._attr_unique_id = f"{runtime.item_id}_{key}"
-        # Per-notification devices would all be listed on the integration page.
+        # One device per notification, shown under its subentry on the integration page.
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{runtime.hub.entry.entry_id}_{NOTIFICATIONS_PARENT}")}
+            identifiers={(DOMAIN, runtime.item_id)},
+            name=runtime.name,
+            manufacturer="Notification Lights",
         )
 
     @property

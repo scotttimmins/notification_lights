@@ -52,11 +52,22 @@ async def setup(hass, *notifications):
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={},
-        version=2,
-        options={
-            "lights": {"bed": LIGHT},
-            "notifications": {f"n{i}": n for i, n in enumerate(notifications)},
-        },
+        version=3,
+        subentries_data=[
+            ConfigSubentryData(
+                subentry_type="light", title="Bed", unique_id=None, data=LIGHT, subentry_id="bed"
+            ),
+            *[
+                ConfigSubentryData(
+                    subentry_type="notification",
+                    title=n["name"],
+                    unique_id=None,
+                    data=n,
+                    subentry_id=f"n{i}",
+                )
+                for i, n in enumerate(notifications)
+            ],
+        ],
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -107,27 +118,35 @@ async def test_dismiss_lasts_until_source_restarts(hass):
     assert len(paint) == 2  # shown again after the source restarted
 
 
-async def test_migration_keeps_entity_ids_and_drops_subentries(hass):
-    """Why: moving off subentries must not delete entities users built automations on."""
+async def test_migration_keeps_entity_ids_and_makes_subentries(hass):
+    """Why: moving items into subentries must not delete entities users built automations on."""
     from homeassistant.helpers import entity_registry as er
 
-    sub = ConfigSubentryData(
-        subentry_type="notification",
-        title="Door",
-        unique_id=None,
-        data=notification("Door", 1, "whole"),
+    old = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        version=2,
+        options={"notifications": {"door": notification("Door", 1, "whole")}},
     )
-    old = MockConfigEntry(domain=DOMAIN, data={}, version=1, subentries_data=[sub])
     old.add_to_hass(hass)
-    sid = next(iter(old.subentries))
     registry = er.async_get(hass)
-    registry.async_get_or_create(
-        "switch", DOMAIN, f"{sid}_enabled", config_entry=old, config_subentry_id=sid
-    )
+    registry.async_get_or_create("switch", DOMAIN, "door_enabled", config_entry=old)
     hass.states.async_set("binary_sensor.door", "off")
     assert await hass.config_entries.async_setup(old.entry_id)
     await hass.async_block_till_done()
-    assert old.version == 2 and not old.subentries
-    assert old.options["notifications"][sid]["name"] == "Door"
-    ent = registry.async_get_entity_id("switch", DOMAIN, f"{sid}_enabled")
-    assert ent and registry.async_get(ent).config_subentry_id is None
+    assert old.version == 3 and not old.options
+    assert old.subentries["door"].subentry_type == "notification"
+    ent = registry.async_get_entity_id("switch", DOMAIN, "door_enabled")
+    assert ent and registry.async_get(ent).config_subentry_id == "door"
+
+
+async def test_each_notification_has_its_own_device_with_preview_and_dismiss(hass):
+    """Why: the integration page shows one device per item; Preview and Dismiss live on it."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    entry = await setup(hass, notification("Door", 1, "whole"))
+    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, "n0")})
+    assert device and entry.entry_id in device.config_entries
+    names = {e.original_name for e in er.async_entries_for_device(er.async_get(hass), device.id)}
+    assert {"Preview", "Dismiss"} <= names

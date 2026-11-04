@@ -270,15 +270,28 @@ class Hub:
         self._painted: dict[str, list[dict[str, Any]]] = {}
         self._task: Any = None
         self._again = False
-        self._applied_options: dict[str, Any] = {}
+        self._applied: Any = None
+
+    def _items(self, kind: str) -> dict[str, dict[str, Any]]:
+        """Return the stored data of every subentry of one type, by id."""
+        return {
+            sid: dict(sub.data)
+            for sid, sub in self.entry.subentries.items()
+            if sub.subentry_type == kind
+        }
+
+    def _snapshot(self) -> Any:
+        """Everything a reload would re-read: the entry's data and every subentry's data."""
+        return deepcopy(
+            (dict(self.entry.data), {s: dict(v.data) for s, v in self.entry.subentries.items()})
+        )
 
     async def async_start(self) -> None:
         """Load the stored items, start following sources and draw the first frame."""
-        self._applied_options = deepcopy(dict(self.entry.options))
-        for item_id, data in self.entry.options.get(KIND_NOTIFICATION, {}).items():
+        self._applied = self._snapshot()
+        for item_id, data in self._items(KIND_NOTIFICATION).items():
             self.notifications[item_id] = NotificationRuntime(self, item_id, data)
-        for item_id, data in self.entry.options.get(KIND_LIGHT, {}).items():
-            self.lights[item_id] = dict(data)
+        self.lights = self._items(KIND_LIGHT)
         for runtime in self.notifications.values():
             await runtime.async_start()
         if self._quiet_entity:
@@ -303,16 +316,13 @@ class Hub:
         self._preview_lights.clear()
         await self._render_once()
 
-    def options_applied(self, options: dict[str, Any]) -> bool:
-        """Whether these options are already what is running (so no reload is needed).
-
-        Args:
-            options: The entry's current options.
+    def is_applied(self) -> bool:
+        """Whether the entry's data and subentries are already what is running.
 
         Returns:
-            True when they match what the hub last applied or saved itself.
+            True when they match what the hub last loaded or saved itself (no reload needed).
         """
-        return dict(options) == self._applied_options
+        return self._snapshot() == self._applied
 
     @callback
     def set_colour(self, item_id: str, rgb: list[int]) -> None:
@@ -325,10 +335,11 @@ class Hub:
         runtime = self.notifications[item_id]
         runtime.rgb = rgb
         runtime.data[CONF_COLOUR] = rgb
-        options = deepcopy(dict(self.entry.options))
-        options[KIND_NOTIFICATION][item_id][CONF_COLOUR] = rgb
-        self._applied_options = deepcopy(options)
-        self.hass.config_entries.async_update_entry(self.entry, options=options)
+        sub = self.entry.subentries[item_id]
+        self.hass.config_entries.async_update_subentry(
+            self.entry, sub, data={**sub.data, CONF_COLOUR: rgb}
+        )
+        self._applied = self._snapshot()  # listeners run later, so they see no change
         runtime.preview()
 
     @callback

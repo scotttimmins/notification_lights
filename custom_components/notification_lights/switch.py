@@ -28,7 +28,7 @@ async def async_setup_entry(
     """
     hub = entry.runtime_data
     for item_id, runtime in hub.notifications.items():
-        async_add_entities([EnabledSwitch(runtime)])
+        async_add_entities([EnabledSwitch(runtime)], config_subentry_id=item_id)
 
 
 class EnabledSwitch(NotificationEntity, SwitchEntity, RestoreEntity):

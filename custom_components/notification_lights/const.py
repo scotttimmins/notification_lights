@@ -5,9 +5,9 @@ AQARA_DOMAIN = "aqara_advanced_lighting"
 
 CONF_QUIET_ENTITY = "quiet_entity"
 
-# Keys of the option dicts holding the lights and notifications, by item id.
-KIND_LIGHT = "lights"
-KIND_NOTIFICATION = "notifications"
+# Subentry types: each light and each notification is one subentry (its id is the item id).
+KIND_LIGHT = "light"
+KIND_NOTIFICATION = "notification"
 
 # Notification light
 CONF_LIGHT = "light"
@@ -46,8 +46,8 @@ SCOPES = [SCOPE_HOUSE, SCOPE_FLOOR, SCOPE_ROOM]
 SOURCE_ENTITIES = "entities"
 SOURCE_TEMPLATE = "template"
 
-LIGHTS_PARENT = "lights"
-NOTIFICATIONS_PARENT = "notifications"
+# Entry-level device holding Dismiss all and Print guide.
+GENERAL_DEVICE = "general"
 
 PREVIEW_SECONDS = 30
 SERVICE_DISMISS_ALL = "dismiss_all"

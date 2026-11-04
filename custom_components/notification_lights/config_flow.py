@@ -1,7 +1,8 @@
-"""Config flow for Notification Lights: setup, plus one manager under Configure.
+"""Config flow for Notification Lights.
 
-Lights and notifications are stored as subentries, but are managed as two groups from
-the integration's Configure dialog rather than one add-flow per item.
+Setup asks for the quiet-hours entity. Each light and each notification is a config
+subentry, so the integration page shows two collapsible sections with an Add button each
+and Reconfigure and Delete on every item. Configure only changes the quiet-hours entity.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
+    ConfigSubentryFlow,
     OptionsFlow,
 )
 from homeassistant.core import HomeAssistant, callback
@@ -22,7 +24,6 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
-from homeassistant.util import ulid as ulid_util
 from homeassistant.helpers.template import Template
 
 from .const import (
@@ -62,14 +63,7 @@ from .const import (
     KIND_NOTIFICATION,
 )
 from .footprint import FOOTPRINTS
-from .summary import light_summary, notification_label, notification_summary
 from .validation import validate_pick, validate_priority, validate_ring
-
-CHOICE = "choice"
-CHOICE_ADD = "__add__"
-CHOICE_BACK = "__back__"
-CONF_REMOVE = "remove"
-
 
 def area_id_of(hass: HomeAssistant, entity_id: str) -> str | None:
     """Return the entity's area, falling back to its device's area.
@@ -126,20 +120,35 @@ def friendly_name_of(hass: HomeAssistant, entity_id: str) -> str:
 class NotificationLightsConfigFlow(ConfigFlow, domain=DOMAIN):
     """Single-instance setup: only the optional quiet-hours entity."""
 
-    VERSION = 2
+    VERSION = 3
 
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
-        """Return the manager shown under Configure.
+        """Return the quiet-hours dialog shown under Configure.
 
         Args:
             config_entry: The integration's config entry.
 
         Returns:
-            The manager flow.
+            The quiet-hours flow.
         """
-        return ManagerFlow()
+        return QuietFlow()
+
+    @classmethod
+    @callback
+    def async_get_supported_subentry_types(
+        cls, config_entry: ConfigEntry
+    ) -> dict[str, type[ConfigSubentryFlow]]:
+        """Return the two kinds of item added from the integration page.
+
+        Args:
+            config_entry: The integration's config entry.
+
+        Returns:
+            The flow for each subentry type.
+        """
+        return {KIND_LIGHT: LightSubentryFlow, KIND_NOTIFICATION: NotificationSubentryFlow}
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -172,21 +181,10 @@ def _quiet_schema() -> vol.Schema:
     )
 
 
-def _pick_schema(options: list[dict[str, str]]) -> vol.Schema:
-    """Schema for a group screen: one list to pick from."""
-    return vol.Schema(
-        {
-            vol.Required(CHOICE): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=options, mode=selector.SelectSelectorMode.LIST
-                )
-            )
-        }
-    )
 
 
 class _FormBase:
-    """State and helpers shared by every flow that edits a light or a notification."""
+    """State and helpers shared by the flows that define a light or a notification."""
 
     def _init_state(self) -> None:
         """Start with nothing being edited."""
@@ -194,35 +192,49 @@ class _FormBase:
         self._item_id: str | None = None
         self._light: str = ""
 
-    @property
-    def _entry(self) -> ConfigEntry:
-        """The integration's config entry."""
-        raise NotImplementedError
-
     def _items(self, kind: str) -> dict[str, dict[str, Any]]:
-        """Return this entry's stored items of one kind, by id."""
-        return dict(self._entry.options.get(kind, {}))
+        """Return the stored data of every subentry of one type, by id."""
+        return {
+            sid: dict(sub.data)
+            for sid, sub in self._get_entry().subentries.items()
+            if sub.subentry_type == kind
+        }
 
     @property
     def _current(self) -> dict[str, Any]:
         """Values of the item being edited (empty when adding)."""
         return dict(self._data)
 
-    async def _item_saved(self, kind: str, data: dict[str, Any]) -> Any:
-        """Store the finished item and decide where the flow goes next."""
-        raise NotImplementedError
+    def _load_for_reconfigure(self) -> None:
+        """Load the subentry being reconfigured."""
+        sub = self._get_reconfigure_subentry()
+        self._item_id, self._data = sub.subentry_id, dict(sub.data)
 
-    async def _item_removed(self, kind: str) -> Any:
-        """Remove the item and decide where the flow goes next."""
-        raise NotImplementedError
+    def _save(self, data: dict[str, Any]) -> Any:
+        """Create the subentry, or update the one being reconfigured.
+
+        Args:
+            data: The finished item.
+
+        Returns:
+            The finished flow.
+        """
+        title = data.get(CONF_NAME) or data[CONF_LIGHT]
+        if self._item_id is None:
+            return self.async_create_entry(title=title, data=data)
+        return self.async_update_and_abort(
+            self._get_entry(), self._get_reconfigure_subentry(), title=title, data=data
+        )
 
 
-class LightForms(_FormBase):
-    """The steps that define a Notification light."""
+class LightSubentryFlow(_FormBase, ConfigSubentryFlow):
+    """Add or reconfigure a Notification light."""
 
-    async def async_step_light_pick(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    def __init__(self) -> None:
+        """Start with nothing being edited."""
+        self._init_state()
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> Any:
         """Pick the ring entity of a new Notification light.
 
         Args:
@@ -251,35 +263,32 @@ class LightForms(_FormBase):
                 )
             }
         )
-        return self.async_show_form(
-            step_id="light_pick", data_schema=schema, errors=errors
-        )
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
-    async def async_step_light_details(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Rooms, floor and drawing options of a light (prefilled from its device).
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> Any:
+        """Edit every setting of an existing light in one form."""
+        self._load_for_reconfigure()
+        self._light = self._data[CONF_LIGHT]
+        self._data.setdefault(CONF_NAME, friendly_name_of(self.hass, self._light))
+        return await self.async_step_light_details()
+
+    async def async_step_light_details(self, user_input: dict[str, Any] | None = None) -> Any:
+        """Name, rooms, floor and drawing options (prefilled from the light's device).
 
         Args:
             user_input: The submitted form, or None to show it.
 
         Returns:
-            The form, or the result of saving or removing.
+            The form, or the finished flow.
         """
         errors: dict[str, str] = {}
-        editing = self._item_id is not None
         if user_input is not None:
-            if user_input.pop(CONF_REMOVE, False):
-                return await self._item_removed(KIND_LIGHT)
             # NumberSelector returns floats.
             for key in (CONF_SEGMENTS, CONF_OFFSET, CONF_BRIGHTNESS):
                 user_input[key] = int(user_input[key])
             errors = validate_ring(user_input)
             if not errors:
-                return await self._item_saved(
-                    KIND_LIGHT,
-                    {CONF_LIGHT: self._light, **user_input},
-                )
+                return self._save({CONF_LIGHT: self._light, **user_input})
 
         fields: dict[Any, Any] = {
             vol.Required(CONF_NAME): selector.TextSelector(),
@@ -303,8 +312,6 @@ class LightForms(_FormBase):
                 )
             ),
         }
-        if editing:
-            fields[vol.Optional(CONF_REMOVE, default=False)] = bool
         return self.async_show_form(
             step_id="light_details",
             data_schema=self.add_suggested_values_to_schema(
@@ -315,8 +322,21 @@ class LightForms(_FormBase):
         )
 
 
-class NotificationForms(_FormBase):
-    """The steps that define a notification."""
+class NotificationSubentryFlow(_FormBase, ConfigSubentryFlow):
+    """Add or reconfigure a notification: every setting in one form."""
+
+    def __init__(self) -> None:
+        """Start with nothing being edited."""
+        self._init_state()
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> Any:
+        """Add a notification."""
+        return await self.async_step_notification()
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> Any:
+        """Edit every setting of an existing notification in one form."""
+        self._load_for_reconfigure()
+        return await self.async_step_notification()
 
     def _other_priorities(self) -> list[int]:
         """Priorities used by the other notifications."""
@@ -326,33 +346,70 @@ class NotificationForms(_FormBase):
             if sid != self._item_id
         ]
 
-    async def async_step_notification(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Name, colour, footprint, priority, quiet hours, scope and delay.
+    def _check(self, values: dict[str, Any], others: list[int]) -> tuple[dict[str, Any], dict[str, str]]:
+        """Validate the form and tidy it into the stored shape.
+
+        Scope and source each keep only the fields that apply, so switching one in the
+        form never leaves the other's values behind.
+
+        Args:
+            values: The submitted form.
+            others: Priorities used by other notifications.
+
+        Returns:
+            The stored data and the errors by field.
+        """
+        data = dict(values)
+        data[CONF_PRIORITY] = int(data[CONF_PRIORITY])
+        data[CONF_DELAY] = int(data[CONF_DELAY])
+        errors = validate_priority(data[CONF_PRIORITY], others)
+
+        scope = data[CONF_SCOPE]
+        if scope != SCOPE_ROOM:
+            data.pop(CONF_SCOPE_AREA, None)
+        elif not data.get(CONF_SCOPE_AREA):
+            errors[CONF_SCOPE_AREA] = "area_required"
+        if scope != SCOPE_FLOOR:
+            data.pop(CONF_SCOPE_FLOOR, None)
+        elif not data.get(CONF_SCOPE_FLOOR):
+            errors[CONF_SCOPE_FLOOR] = "floor_required"
+
+        template = (data.get(CONF_SOURCE_TEMPLATE) or "").strip()
+        entities = data.get(CONF_SOURCE_ENTITIES) or []
+        if template and entities:
+            errors[CONF_SOURCE_TEMPLATE] = "one_source"
+        elif template:
+            try:
+                Template(template, self.hass).ensure_valid()
+            except TemplateError:
+                errors[CONF_SOURCE_TEMPLATE] = "invalid_template"
+            data[CONF_SOURCE_TYPE] = SOURCE_TEMPLATE
+            data[CONF_SOURCE_TEMPLATE] = template
+            data.pop(CONF_SOURCE_ENTITIES, None)
+            data.pop(CONF_SOURCE_STATE, None)
+        elif entities:
+            data[CONF_SOURCE_TYPE] = SOURCE_ENTITIES
+            data.setdefault(CONF_SOURCE_STATE, "on")
+            data.pop(CONF_SOURCE_TEMPLATE, None)
+        else:
+            errors[CONF_SOURCE_ENTITIES] = "source_required"
+        return data, errors
+
+    async def async_step_notification(self, user_input: dict[str, Any] | None = None) -> Any:
+        """Name, colour, footprint, priority, quiet hours, scope, source and delay.
 
         Args:
             user_input: The submitted form, or None to show it.
 
         Returns:
-            The form, or the next step.
+            The form, or the finished flow.
         """
         errors: dict[str, str] = {}
         others = self._other_priorities()
         if user_input is not None:
-            if user_input.pop(CONF_REMOVE, False):
-                return await self._item_removed(KIND_NOTIFICATION)
-            user_input[CONF_PRIORITY] = int(user_input[CONF_PRIORITY])
-            user_input[CONF_DELAY] = int(user_input[CONF_DELAY])
-            errors = validate_priority(user_input[CONF_PRIORITY], others)
+            data, errors = self._check(user_input, others)
             if not errors:
-                self._data.update(user_input)
-                scope = user_input[CONF_SCOPE]
-                if scope == SCOPE_ROOM:
-                    return await self.async_step_notification_room()
-                if scope == SCOPE_FLOOR:
-                    return await self.async_step_notification_floor()
-                return await self.async_step_notification_source()
+                return self._save(data)
 
         defaults = {
             CONF_COLOUR: [255, 255, 255],
@@ -361,33 +418,33 @@ class NotificationForms(_FormBase):
             CONF_SHOW_QUIET: False,
             CONF_SCOPE: SCOPE_HOUSE,
             CONF_DELAY: 0,
+            CONF_SOURCE_STATE: "on",
             **self._current,
         }
         fields: dict[Any, Any] = {
             vol.Required(CONF_NAME): selector.TextSelector(),
             vol.Required(CONF_COLOUR): selector.ColorRGBSelector(),
             vol.Required(CONF_FOOTPRINT): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=FOOTPRINTS, translation_key=CONF_FOOTPRINT
-                )
+                selector.SelectSelectorConfig(options=FOOTPRINTS, translation_key=CONF_FOOTPRINT)
             ),
             vol.Required(CONF_PRIORITY): selector.NumberSelector(
                 selector.NumberSelectorConfig(min=1, mode="box")
             ),
             vol.Required(CONF_SHOW_QUIET): bool,
             vol.Required(CONF_SCOPE): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=SCOPES, translation_key=CONF_SCOPE
-                )
+                selector.SelectSelectorConfig(options=SCOPES, translation_key=CONF_SCOPE)
             ),
+            vol.Optional(CONF_SCOPE_AREA): selector.AreaSelector(),
+            vol.Optional(CONF_SCOPE_FLOOR): selector.FloorSelector(),
+            vol.Optional(CONF_SOURCE_ENTITIES): selector.EntitySelector(
+                selector.EntitySelectorConfig(multiple=True)
+            ),
+            vol.Optional(CONF_SOURCE_STATE): selector.TextSelector(),
+            vol.Optional(CONF_SOURCE_TEMPLATE): selector.TemplateSelector(),
             vol.Required(CONF_DELAY): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0, mode="box", unit_of_measurement="s"
-                )
+                selector.NumberSelectorConfig(min=0, mode="box", unit_of_measurement="s")
             ),
         }
-        if self._item_id is not None:
-            fields[vol.Optional(CONF_REMOVE, default=False)] = bool
         return self.async_show_form(
             step_id="notification",
             data_schema=self.add_suggested_values_to_schema(
@@ -396,313 +453,28 @@ class NotificationForms(_FormBase):
             errors=errors,
         )
 
-    async def async_step_notification_room(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Pick the room for room scope.
 
-        Args:
-            user_input: The submitted form, or None to show it.
+class QuietFlow(OptionsFlow):
+    """Configure: pick the quiet-hours entity (lights and notifications are added on the integration page)."""
 
-        Returns:
-            The form, or the source menu.
-        """
-        if user_input is not None:
-            self._data[CONF_SCOPE_AREA] = user_input[CONF_SCOPE_AREA]
-            self._data.pop(CONF_SCOPE_FLOOR, None)
-            return await self.async_step_notification_source()
-        schema = vol.Schema({vol.Required(CONF_SCOPE_AREA): selector.AreaSelector()})
-        return self.async_show_form(
-            step_id="notification_room",
-            data_schema=self.add_suggested_values_to_schema(schema, self._current),
-        )
-
-    async def async_step_notification_floor(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Pick the floor for floor scope.
-
-        Args:
-            user_input: The submitted form, or None to show it.
-
-        Returns:
-            The form, or the source menu.
-        """
-        if user_input is not None:
-            self._data[CONF_SCOPE_FLOOR] = user_input[CONF_SCOPE_FLOOR]
-            self._data.pop(CONF_SCOPE_AREA, None)
-            return await self.async_step_notification_source()
-        schema = vol.Schema({vol.Required(CONF_SCOPE_FLOOR): selector.FloorSelector()})
-        return self.async_show_form(
-            step_id="notification_floor",
-            data_schema=self.add_suggested_values_to_schema(schema, self._current),
-        )
-
-    async def async_step_notification_source(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Choose how the source is defined: entities or a template.
-
-        Args:
-            user_input: Unused; this is a menu.
-
-        Returns:
-            The menu.
-        """
-        if self._data[CONF_SCOPE] == SCOPE_HOUSE:
-            self._data.pop(CONF_SCOPE_AREA, None)
-            self._data.pop(CONF_SCOPE_FLOOR, None)
-        return self.async_show_menu(
-            step_id="notification_source",
-            menu_options=["notification_entities", "notification_template"],
-        )
-
-    async def async_step_notification_entities(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Source from entities: active while any is in the given state.
-
-        Args:
-            user_input: The submitted form, or None to show it.
-
-        Returns:
-            The form, or the result of saving.
-        """
-        if user_input is not None:
-            self._data.update(user_input)
-            self._data[CONF_SOURCE_TYPE] = SOURCE_ENTITIES
-            self._data.pop(CONF_SOURCE_TEMPLATE, None)
-            return await self._finish_notification()
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_SOURCE_ENTITIES): selector.EntitySelector(
-                    selector.EntitySelectorConfig(multiple=True)
-                ),
-                vol.Required(CONF_SOURCE_STATE, default="on"): selector.TextSelector(),
-            }
-        )
-        return self.async_show_form(
-            step_id="notification_entities",
-            data_schema=self.add_suggested_values_to_schema(schema, self._current),
-        )
-
-    async def async_step_notification_template(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Source from a template: active while it renders true.
-
-        Args:
-            user_input: The submitted form, or None to show it.
-
-        Returns:
-            The form, or the result of saving.
-        """
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            try:
-                Template(user_input[CONF_SOURCE_TEMPLATE], self.hass).ensure_valid()
-            except TemplateError:
-                errors[CONF_SOURCE_TEMPLATE] = "invalid_template"
-            else:
-                self._data.update(user_input)
-                self._data[CONF_SOURCE_TYPE] = SOURCE_TEMPLATE
-                self._data.pop(CONF_SOURCE_ENTITIES, None)
-                self._data.pop(CONF_SOURCE_STATE, None)
-                return await self._finish_notification()
-        schema = vol.Schema(
-            {vol.Required(CONF_SOURCE_TEMPLATE): selector.TemplateSelector()}
-        )
-        return self.async_show_form(
-            step_id="notification_template",
-            data_schema=self.add_suggested_values_to_schema(
-                schema, user_input if user_input is not None else self._current
-            ),
-            errors=errors,
-        )
-
-    async def _finish_notification(self) -> Any:
-        """Save the notification."""
-        return await self._item_saved(KIND_NOTIFICATION, dict(self._data))
-
-
-class ManagerFlow(LightForms, NotificationForms, OptionsFlow):
-    """Manage quiet hours, Notification lights and Notifications from one place."""
-
-    def __init__(self) -> None:
-        """Start with nothing being edited."""
-        self._init_state()
-
-    @property
-    def _entry(self) -> ConfigEntry:
-        """The integration's config entry."""
-        return self.config_entry
-
-    async def _item_saved(self, kind: str, data: dict[str, Any]) -> Any:
-        """Save the item and return to its group list.
-
-        Args:
-            kind: KIND_LIGHT or KIND_NOTIFICATION.
-            data: The stored data.
-
-        Returns:
-            The group list.
-        """
-        items = self._items(kind)
-        items[self._item_id or ulid_util.ulid()] = data
-        self._write(kind, items)
-        return await self._group_list(kind)
-
-    async def _item_removed(self, kind: str) -> Any:
-        """Remove the item and return to its group list.
-
-        Args:
-            kind: KIND_LIGHT or KIND_NOTIFICATION.
-
-        Returns:
-            The group list.
-        """
-        items = self._items(kind)
-        items.pop(self._item_id, None)
-        self._write(kind, items)
-        return await self._group_list(kind)
-
-    async def _group_list(self, kind: str) -> Any:
-        """Show the list for one group."""
-        if kind == KIND_LIGHT:
-            return await self.async_step_lights()
-        return await self.async_step_notifications()
-
-    def _write(self, kind: str, items: dict[str, dict[str, Any]]) -> None:
-        """Save one kind's items in the options (reloads the entry)."""
-        self.hass.config_entries.async_update_entry(
-            self.config_entry, options={**self.config_entry.options, kind: items}
-        )
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """Show the top-level menu.
-
-        Args:
-            user_input: Unused; this is a menu.
-
-        Returns:
-            The menu.
-        """
-        return self.async_show_menu(
-            step_id="init", menu_options=["lights", "notifications", "settings", "done"]
-        )
-
-    async def async_step_done(self, user_input: dict[str, Any] | None = None) -> Any:
-        """Close the dialog.
-
-        Args:
-            user_input: Unused.
-
-        Returns:
-            A finished flow (options unchanged; items are saved as you go).
-        """
-        return self.async_create_entry(data=dict(self.config_entry.options))
-
-    async def async_step_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> Any:
         """Pick the quiet-hours entity.
 
         Args:
             user_input: The submitted form, or None to show it.
 
         Returns:
-            The form, or the menu once saved.
+            The form, or the finished flow once saved.
         """
         if user_input is not None:
             data = {k: v for k, v in self.config_entry.data.items() if k != CONF_QUIET_ENTITY}
             if user_input.get(CONF_QUIET_ENTITY):
                 data[CONF_QUIET_ENTITY] = user_input[CONF_QUIET_ENTITY]
             self.hass.config_entries.async_update_entry(self.config_entry, data=data)
-            return await self.async_step_init()
+            return self.async_create_entry(data={})
         return self.async_show_form(
-            step_id="settings",
+            step_id="init",
             data_schema=self.add_suggested_values_to_schema(
                 _quiet_schema(), dict(self.config_entry.data)
             ),
         )
-
-    async def async_step_lights(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """List all Notification lights; add one or pick one to edit.
-
-        Args:
-            user_input: The submitted choice, or None to show the list.
-
-        Returns:
-            The list, or the next step.
-        """
-        items = self._items(KIND_LIGHT)
-        if user_input is not None:
-            choice = user_input[CHOICE]
-            if choice == CHOICE_BACK:
-                return await self.async_step_init()
-            if choice == CHOICE_ADD:
-                self._item_id, self._data = None, {}
-                return await self.async_step_light_pick()
-            self._item_id, self._data = choice, dict(items[choice])
-            self._light = self._data[CONF_LIGHT]
-            self._data.setdefault(CONF_NAME, friendly_name_of(self.hass, self._light))
-            return await self.async_step_light_details()
-        options = [
-            {"value": CHOICE_ADD, "label": "Add a notification light"},
-            *[
-                {"value": sid, "label": s.get(CONF_NAME) or s[CONF_LIGHT]}
-                for sid, s in sorted(items.items(), key=lambda kv: kv[1].get(CONF_NAME) or kv[1][CONF_LIGHT])
-            ],
-            {"value": CHOICE_BACK, "label": "Back"},
-        ]
-        return self.async_show_form(
-            step_id="lights",
-            data_schema=_pick_schema(options),
-            description_placeholders={
-                "summary": light_summary(items.values())
-            },
-        )
-
-    async def async_step_notifications(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
-        """List all notifications by priority; add one or pick one to edit.
-
-        Args:
-            user_input: The submitted choice, or None to show the list.
-
-        Returns:
-            The list, or the next step.
-        """
-        items = self._items(KIND_NOTIFICATION)
-        if user_input is not None:
-            choice = user_input[CHOICE]
-            if choice == CHOICE_BACK:
-                return await self.async_step_init()
-            if choice == CHOICE_ADD:
-                self._item_id, self._data = None, {}
-            else:
-                self._item_id, self._data = choice, dict(items[choice])
-            return await self.async_step_notification()
-        options = [
-            {"value": CHOICE_ADD, "label": "Add a notification"},
-            *[
-                {"value": sid, "label": notification_label(s)}
-                for sid, s in sorted(
-                    items.items(), key=lambda kv: int(kv[1][CONF_PRIORITY])
-                )
-            ],
-            {"value": CHOICE_BACK, "label": "Back"},
-        ]
-        return self.async_show_form(
-            step_id="notifications",
-            data_schema=_pick_schema(options),
-            description_placeholders={
-                "summary": notification_summary(items.values())
-            },
-        )
-
