@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.event import (
     EventStateChangedData,
@@ -16,11 +17,13 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_template_result,
 )
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.template import Template, result_as_boolean
 
 from .const import (
     AQARA_DOMAIN,
     CONF_AREAS,
+    DOMAIN,
     CONF_BRIGHTNESS,
     CONF_COLOUR,
     CONF_DELAY,
@@ -56,13 +59,16 @@ _LOGGER = logging.getLogger(__name__)
 class NotificationRuntime:
     """One notification: follows its source and exposes enabled/dismissed/preview."""
 
-    def __init__(self, hub: Hub, item_id: str, data: dict[str, Any]) -> None:
+    def __init__(
+        self, hub: Hub, item_id: str, data: dict[str, Any], dismissed: bool = False
+    ) -> None:
         """Create the runtime for one stored notification.
 
         Args:
             hub: The owning hub.
             item_id: The notification's id.
             data: The notification's stored data.
+            dismissed: Whether it was dismissed before a restart or reload.
         """
         self.hub = hub
         self.item_id = item_id
@@ -75,6 +81,9 @@ class NotificationRuntime:
         self.enabled = True
         self.source_active = False
         self.dismissed = False
+        # Dismissed before a restart: applies once the source is next seen active, and
+        # ends only when the source is definitely inactive (unknown is not inactive).
+        self._keep_dismissed = dismissed
         self.previewing = False
         self._raw = False
         self._delay = float(self.data.get(CONF_DELAY, 0))
@@ -119,6 +128,7 @@ class NotificationRuntime:
         """Tell entities and the renderer something changed."""
         for listener in list(self._listeners):
             listener()
+        self.hub.save_dismissed()
         self.hub.request_render()
 
     async def async_start(self) -> None:
@@ -134,7 +144,7 @@ class NotificationRuntime:
                 if isinstance(result, Exception):
                     _LOGGER.warning("%s: template error: %s", self.name, result)
                     return
-                self._set_raw(result_as_boolean(result))
+                self._set_raw(_truth(result))
 
             info = async_track_template_result(
                 hass, [TrackTemplate(template, None)], _template_changed
@@ -163,31 +173,38 @@ class NotificationRuntime:
                 timer()
         self._timer = self._preview_timer = None
 
-    def _render_bool(self, template: Template) -> bool:
-        """Render a template to a boolean; errors count as inactive."""
+    def _render_bool(self, template: Template) -> bool | None:
+        """Render a template to a boolean; errors and unknown count as undecided."""
         try:
-            return result_as_boolean(template.async_render(parse_result=False))
+            return _truth(template.async_render(parse_result=False))
         except Exception as err:  # noqa: BLE001 - a bad template must not stop setup
             _LOGGER.warning("%s: template error: %s", self.name, err)
-            return False
+            return None
 
-    def _entities_match(self) -> bool:
-        """True when any source entity is in the configured state."""
+    def _entities_match(self) -> bool | None:
+        """True when any source entity is in the configured state.
+
+        Returns:
+            None while the answer is unknown: no entity matches and some are unknown,
+            unavailable or missing. Unknown is not inactive.
+        """
         wanted = self.data[CONF_SOURCE_STATE]
-        return any(
-            self.hub.hass.states.is_state(e, wanted)
-            for e in self.data[CONF_SOURCE_ENTITIES]
-        )
+        states = [self.hub.hass.states.get(e) for e in self.data[CONF_SOURCE_ENTITIES]]
+        if any(st and st.state == wanted for st in states):
+            return True
+        if any(st is None or st.state in (STATE_UNKNOWN, STATE_UNAVAILABLE) for st in states):
+            return None
+        return False
 
     @callback
-    def _set_raw(self, value: bool) -> None:
+    def _set_raw(self, value: bool | None) -> None:
         """Apply the source's raw truth value, honouring the delay.
 
         The notification follows the source exactly: it turns on only after the source
         has been true for the delay, and off the moment the source is false. A dismissal
-        ends when the source goes false.
+        ends when the source goes false. None (unknown) changes nothing.
         """
-        if value == self._raw:
+        if value is None or value == self._raw:
             return
         self._raw = value
         if self._timer:
@@ -195,22 +212,27 @@ class NotificationRuntime:
             self._timer = None
         if not value:
             self.source_active = False
-            self.dismissed = False
+            self.dismissed = self._keep_dismissed = False
             self._changed()
         elif self._delay > 0:
             self._timer = async_call_later(
                 self.hub.hass, self._delay, self._delay_elapsed
             )
         else:
-            self.source_active = True
-            self._changed()
+            self._activate()
+
+    @callback
+    def _activate(self) -> None:
+        """The source is active (and has held for the delay)."""
+        self.source_active = True
+        self.dismissed = self._keep_dismissed
+        self._changed()
 
     @callback
     def _delay_elapsed(self, _now: Any) -> None:
         """The source has held for the delay."""
         self._timer = None
-        self.source_active = True
-        self._changed()
+        self._activate()
 
     @callback
     def set_enabled(self, enabled: bool) -> None:
@@ -226,8 +248,14 @@ class NotificationRuntime:
     @callback
     def dismiss(self) -> None:
         """Hide it until its source next goes inactive and active again."""
+        if self.previewing:
+            self.previewing = False
+            if self._preview_timer:
+                self._preview_timer()
+                self._preview_timer = None
+            self._changed()
         if self.source_active and not self.dismissed:
-            self.dismissed = True
+            self.dismissed = self._keep_dismissed = True
             self._changed()
 
     @callback
@@ -271,6 +299,7 @@ class Hub:
         self._task: Any = None
         self._again = False
         self._applied: Any = None
+        self._store: Store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.dismissed")
 
     def _items(self, kind: str) -> dict[str, dict[str, Any]]:
         """Return the stored data of every subentry of one type, by id."""
@@ -289,8 +318,11 @@ class Hub:
     async def async_start(self) -> None:
         """Load the stored items, start following sources and draw the first frame."""
         self._applied = self._snapshot()
+        dismissed = set((await self._store.async_load() or {}).get("dismissed", []))
         for item_id, data in self._items(KIND_NOTIFICATION).items():
-            self.notifications[item_id] = NotificationRuntime(self, item_id, data)
+            self.notifications[item_id] = NotificationRuntime(
+                self, item_id, data, item_id in dismissed
+            )
         self.lights = self._items(KIND_LIGHT)
         for runtime in self.notifications.values():
             await runtime.async_start()
@@ -302,8 +334,18 @@ class Hub:
             )
         self.request_render()
 
+    def _dismissed_data(self) -> dict[str, list[str]]:
+        """The ids of dismissed notifications, as stored."""
+        return {"dismissed": [i for i, n in self.notifications.items() if n._keep_dismissed]}
+
+    @callback
+    def save_dismissed(self) -> None:
+        """Remember dismissals so a restart or reload does not bring a notification back."""
+        self._store.async_delay_save(self._dismissed_data, 1)
+
     async def async_stop(self) -> None:
         """Stop following sources and put the lights back."""
+        await self._store.async_save(self._dismissed_data())
         for runtime in self.notifications.values():
             runtime.async_stop()
         for unsub in self._unsubs:
@@ -465,3 +507,10 @@ class Hub:
                 await self.hass.services.async_call(
                     "light", "turn_off", {"entity_id": entity}, blocking=True
                 )
+
+
+def _truth(result: Any) -> bool | None:
+    """Read a template result as a boolean; unknown and unavailable are undecided (None)."""
+    if isinstance(result, str) and result.strip().lower() in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+        return None
+    return result_as_boolean(result)

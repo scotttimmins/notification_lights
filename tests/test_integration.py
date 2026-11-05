@@ -150,3 +150,34 @@ async def test_each_notification_has_its_own_device_with_preview_and_dismiss(has
     assert device and entry.entry_id in device.config_entries
     names = {e.original_name for e in er.async_entries_for_device(er.async_get(hass), device.id)}
     assert {"Preview", "Dismiss"} <= names
+
+
+async def test_unknown_source_does_not_end_a_dismissal(hass):
+    """Why: unknown is not inactive; a blip to unknown/unavailable must not bring it back."""
+    paint = async_mock_service(hass, "aqara_advanced_lighting", "set_segment_pattern")
+    async_mock_service(hass, "light", "turn_off")
+    entry = await setup(hass, notification("Door", 1, "whole"))
+    hass.states.async_set("binary_sensor.door", "on")
+    await hass.async_block_till_done()
+    entry.runtime_data.dismiss_all()
+    for blip in ("unavailable", "unknown", "on"):
+        hass.states.async_set("binary_sensor.door", blip)
+        await hass.async_block_till_done()
+    assert entry.runtime_data.notifications["n0"].dismissed
+    hass.states.async_set("binary_sensor.door", "off")
+    hass.states.async_set("binary_sensor.door", "on")
+    await hass.async_block_till_done()
+    assert not entry.runtime_data.notifications["n0"].dismissed
+
+
+async def test_dismissal_survives_a_reload(hass):
+    """Why: a restart while the source is still active must not light the ring again."""
+    async_mock_service(hass, "aqara_advanced_lighting", "set_segment_pattern")
+    async_mock_service(hass, "light", "turn_off")
+    entry = await setup(hass, notification("Door", 1, "whole"))
+    hass.states.async_set("binary_sensor.door", "on")
+    await hass.async_block_till_done()
+    entry.runtime_data.dismiss_all()
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.runtime_data.notifications["n0"].dismissed
