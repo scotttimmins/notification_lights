@@ -20,7 +20,7 @@ A notification shows exactly while its source is active. Lower priority numbers 
 Each notification gets an **Enabled** switch, **Active** sensor, **Colour** light, **Preview** (30 s) and **Dismiss** buttons. The Colour light is the colour picker and is always on: it stands for the notification's colour. Open it (tap the notification's tile on the dashboard) and choose a colour; it is saved and previewed on the lights. Its `status` attribute says showing, idle, dismissed, disabled or preview. Turning it on previews the notification; use Dismiss to dismiss. **Dismiss all** is a button and the `notification_lights.dismiss_all` service.
 
 ## Dashboard
-A generated dashboard lists every notification by priority (a tile in its own colour, lit while it is showing, tap it to change the colour, then its scope, footprint and Enabled / Preview / Dismiss controls), a Dismiss all button and each light's calibration button. Create a new dashboard, open it, choose the three dots, Edit, then the three dots, Raw configuration editor, and paste:
+A generated dashboard lists every notification by priority (a tile whose icon is the ring with the notification's footprint drawn in its colour, e.g. the whole ring for Fire or one eighth for an air alert; tap it to change the colour, then its scope, footprint and Enabled / Preview / Dismiss controls), a Dismiss all button and each light's calibration button. Create a new dashboard, open it, choose the three dots, Edit, then the three dots, Raw configuration editor, and paste:
 
 ```yaml
 strategy:

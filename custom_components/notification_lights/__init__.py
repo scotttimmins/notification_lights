@@ -22,7 +22,8 @@ from .const import (
     SERVICE_PRINT_SHEET,
 )
 from .hub import Hub
-from .printing import GuideView, async_print_sheet
+from . import ws
+from .printing import GuideView, RingView, async_print_sheet
 
 PLATFORMS = [Platform.SWITCH, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.LIGHT]
 STRATEGY_FILE = "notification-lights-strategy.js"
@@ -54,6 +55,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         DOMAIN, SERVICE_PRINT_SHEET, _print_sheet, supports_response=SupportsResponse.ONLY
     )
     hass.http.register_view(GuideView())
+    hass.http.register_view(RingView())
+    ws.async_register(hass)
     await _register_dashboard_strategy(hass)
     return True
 

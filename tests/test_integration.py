@@ -181,3 +181,15 @@ async def test_dismissal_survives_a_reload(hass):
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.runtime_data.notifications["n0"].dismissed
+
+
+async def test_dashboard_model_comes_from_the_registry_in_priority_order(hass, hass_ws_client):
+    """Why: the dashboard must not depend on entity states, which are missing just after a restart."""
+    await setup(hass, notification("Leak", 2, "eighth_2"), notification("Fire", 1, "whole"))
+    ws = await hass_ws_client(hass)
+    await ws.send_json({"id": 1, "type": "notification_lights/model"})
+    result = (await ws.receive_json())["result"]
+    assert [n["name"] for n in result["notifications"]] == ["Fire", "Leak"]
+    assert result["notifications"][0]["colour"].startswith("light.")
+    assert result["notifications"][0]["slots"] == list(range(8))
+    assert "f=whole&c=ff0000" in result["notifications"][0]["picture"]

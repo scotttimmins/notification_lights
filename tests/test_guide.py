@@ -39,3 +39,12 @@ def test_source_and_delay_are_described():
 def test_lights_listed_and_empty_message():
     html = build_guide([], [{"light": "light.d_rgb", "name": "Dining", "areas": ["dining_room", "kitchen"], "floor": None}])
     assert "No notifications yet" in html and "dining room, kitchen" in html
+
+
+def test_icon_ring_shows_shape_and_position_in_colour():
+    # Air alert = one eighth; Fire = the whole ring. The icon must show exactly that.
+    one = ring_svg([2], [255, 0, 0], icon=True)
+    assert one.count('fill="#ff0000"') == 1 and one.count("fill-opacity") == 7 and "<text" not in one
+    whole = ring_svg(range(8), [255, 0, 0], icon=True)
+    assert whole.count('fill="#ff0000"') == 8 and "fill-opacity" not in whole
+    assert 'xmlns="http://www.w3.org/2000/svg"' in one  # served as a standalone image

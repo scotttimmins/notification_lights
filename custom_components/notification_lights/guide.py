@@ -53,7 +53,7 @@ def _polar(radius: float, angle: float) -> tuple[float, float]:
     return 60 + radius * math.cos(angle), 60 + radius * math.sin(angle)
 
 
-def ring_svg(slots: Iterable[int], rgb: Iterable[int]) -> str:
+def ring_svg(slots: Iterable[int], rgb: Iterable[int], icon: bool = False) -> str:
     """Draw the ring seen from below, with the lit slots in the notification's colour.
 
     Slot 1 is at the top and slots run clockwise, numbered as on the light.
@@ -61,9 +61,10 @@ def ring_svg(slots: Iterable[int], rgb: Iterable[int]) -> str:
     Args:
         slots: Slot numbers (0-7) that are lit.
         rgb: The notification's colour.
+        icon: A bare ring for a small icon: dim unlit slots, no numbers, no outline.
 
     Returns:
-        An inline SVG string.
+        An SVG string (with the SVG namespace when an icon, so it works as an image file).
     """
     lit = set(slots)
     fill_on = _hex(rgb)
@@ -80,6 +81,10 @@ def ring_svg(slots: Iterable[int], rgb: Iterable[int]) -> str:
             f"M{ox0:.2f},{oy0:.2f} A54,54 0 0 1 {ox1:.2f},{oy1:.2f} "
             f"L{ix1:.2f},{iy1:.2f} A30,30 0 0 0 {ix0:.2f},{iy0:.2f} Z"
         )
+        if icon:
+            fill = f'fill="{fill_on}"' if s in lit else 'fill="#808080" fill-opacity="0.3"'
+            parts.append(f'<path d="{d}" {fill}/>')
+            continue
         parts.append(
             f'<path d="{d}" fill="{fill_on if s in lit else "#ececec"}" '
             f'stroke="#555" stroke-width="0.8"/>'
@@ -90,7 +95,8 @@ def ring_svg(slots: Iterable[int], rgb: Iterable[int]) -> str:
             f'dominant-baseline="central" fill="#000" stroke="#fff" stroke-width="2" '
             f'paint-order="stroke">{s + 1}</text>'
         )
-    return f'<svg viewBox="0 0 120 120" role="img">{"".join(parts)}</svg>'
+    xmlns = ' xmlns="http://www.w3.org/2000/svg"' if icon else ""  # standalone files need it
+    return f'<svg{xmlns} viewBox="0 0 120 120" role="img">{"".join(parts)}</svg>'
 
 
 def _raised_when(data: Mapping[str, Any]) -> str:

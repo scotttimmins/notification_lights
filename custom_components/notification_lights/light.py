@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .entity import NotificationEntity
+from .printing import ring_url
 
 
 async def async_setup_entry(
@@ -54,6 +55,11 @@ class ColourLight(NotificationEntity, LightEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Add the plain-word status for the dashboard tile."""
         return {**super().extra_state_attributes, "status": self.runtime.status}
+
+    @property
+    def entity_picture(self) -> str:
+        """A ring showing the notification's shape and position, in its colour."""
+        return ring_url(self.runtime.footprint, self.runtime.rgb)
 
     @property
     def rgb_color(self) -> tuple[int, int, int]:

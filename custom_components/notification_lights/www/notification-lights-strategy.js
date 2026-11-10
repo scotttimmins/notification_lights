@@ -9,53 +9,31 @@
  *
  * It lists every Aqara Light Notification by priority (a tile in its own colour, lit while it
  * is showing; tap it to change the colour; then its details and Enabled / Preview / Dismiss controls), a Dismiss all
- * button, and the Notification lights with their calibration buttons. The view is built when
- * the dashboard loads, so reload it after adding or removing items.
+ * button, and the Notification lights with their calibration buttons. What to show comes from
+ * the integration (websocket command notification_lights/model), not from entity states, so
+ * it is right straight after a restart. The view is built when the dashboard loads, so reload
+ * it after adding or removing items.
  */
 
-const PLATFORM = "notification_lights";
 const PER_COLUMN = 6;
+const RETRIES = 10;
+const RETRY_MS = 1000;
 
 /**
- * Read everything this integration exposes, grouped by notification and by light.
+ * Ask the integration what to show. Right after a restart it may not be loaded yet, so
+ * retry for a few seconds rather than build an empty dashboard.
  * @param {object} hass Home Assistant frontend object.
- * @returns {{notifications: object[], lights: object[], dismissAll: string|null}}
+ * @returns {Promise<{notifications: object[], lights: object[], dismiss_all: string|null, print_guide: string|null}>}
  */
-function readModel(hass) {
-  const byName = new Map();
-  const lights = [];
-  let dismissAll = null;
-  let printGuide = null;
-
-  for (const [entityId, entry] of Object.entries(hass.entities || {})) {
-    if (entry.platform !== PLATFORM) continue;
-    const attrs = hass.states[entityId]?.attributes;
-    if (!attrs || !attrs.part) continue;
-
-    if (attrs.part === "dismiss_all") {
-      dismissAll = entityId;
-    } else if (attrs.part === "print_guide") {
-      printGuide = entityId;
-    } else if (attrs.part === "calibration") {
-      lights.push({ name: attrs.light, entityId });
-    } else if (attrs.notification) {
-      if (!byName.has(attrs.notification)) {
-        byName.set(attrs.notification, { name: attrs.notification, priority: Infinity });
-      }
-      const item = byName.get(attrs.notification);
-      item[attrs.part] = entityId;
-      if (attrs.part === "active") {
-        item.priority = attrs.priority;
-        item.rgb = attrs.colour;
-      }
+async function loadModel(hass) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await hass.callWS({ type: "notification_lights/model" });
+    } catch (err) {
+      if (attempt >= RETRIES) throw err;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
     }
   }
-
-  const notifications = [...byName.values()]
-    .filter((n) => n.active)
-    .sort((a, b) => a.priority - b.priority);
-  lights.sort((a, b) => a.name.localeCompare(b.name));
-  return { notifications, lights, dismissAll, printGuide };
 }
 
 /**
@@ -73,17 +51,15 @@ function press(entityId) {
 
 /**
  * One notification: a tile that lights up in its colour while showing, then its details.
- * @param {object} n A notification from readModel.
+ * @param {object} n A notification from the model.
  * @returns {object} A vertical-stack card.
  */
 function notificationCard(n) {
-  // The Colour light colours its own tile and opens the colour wheel when tapped; without
-  // one (older install) fall back to the colour recorded when the dashboard was built.
-  const fallback = Array.isArray(n.rgb) ? `rgb(${n.rgb.join(",")})` : "primary";
-  const rows = [
-    { type: "attribute", entity: n.active, attribute: "scope", name: "Where" },
-    { type: "attribute", entity: n.active, attribute: "footprint", name: "Footprint" },
-  ];
+  const rows = [];
+  if (n.active) {
+    rows.push({ type: "attribute", entity: n.active, attribute: "scope", name: "Where" });
+    rows.push({ type: "attribute", entity: n.active, attribute: "footprint", name: "Footprint" });
+  }
   if (n.enabled) rows.push({ entity: n.enabled, name: "Enabled" });
   const buttons = [];
   if (n.preview) buttons.push({ entity: n.preview, name: "Preview", icon: "mdi:eye", tap_action: press(n.preview) });
@@ -96,9 +72,10 @@ function notificationCard(n) {
       {
         type: "tile",
         entity: n.colour || n.active,
-        name: `${Number.isFinite(n.priority) ? `${n.priority}. ` : ""}${n.name}`,
+        name: `${n.priority}. ${n.name}`,
+        // The Colour light's picture is a ring showing the footprint in the colour.
+        show_entity_picture: Boolean(n.colour),
         icon: "mdi:bell-ring",
-        ...(n.colour ? {} : { color: fallback }),
         tap_action: { action: "more-info" },
         state_content: ["status"],
       },
@@ -115,7 +92,32 @@ class NotificationLightsStrategy extends HTMLElement {
    * @returns {Promise<object>} A Lovelace dashboard config.
    */
   static async generate(config, hass) {
-    const { notifications, lights, dismissAll, printGuide } = readModel(hass);
+    let model;
+    try {
+      model = await loadModel(hass);
+    } catch (err) {
+      return {
+        title: config.title || "Notifications",
+        views: [
+          {
+            type: "sections",
+            title: config.title || "Notifications",
+            sections: [
+              {
+                type: "grid",
+                cards: [
+                  {
+                    type: "markdown",
+                    content: "Notification Lights did not answer. Check the integration is loaded, then reload this page.",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+    }
+    const { notifications, lights, dismiss_all: dismissAll, print_guide: printGuide } = model;
 
     const overview = [
       { type: "heading", heading: config.title || "Notifications", icon: "mdi:bell-ring" },
@@ -152,7 +154,7 @@ class NotificationLightsStrategy extends HTMLElement {
         type: "markdown",
         content:
           "No notifications yet. Add them under Settings, Devices & services, " +
-          "Notification Lights, Configure.",
+          "Notification Lights, Add notification.",
       });
     }
 
@@ -172,7 +174,7 @@ class NotificationLightsStrategy extends HTMLElement {
           {
             type: "entities",
             title: "Calibration preview",
-            entities: lights.map((l) => ({ entity: l.entityId, name: l.name })),
+            entities: lights.filter((l) => l.entity).map((l) => ({ entity: l.entity, name: l.name })),
           },
         ],
       });
@@ -193,4 +195,7 @@ class NotificationLightsStrategy extends HTMLElement {
   }
 }
 
-customElements.define("ll-strategy-notification-lights", NotificationLightsStrategy);
+// Guard: loading the script twice (a cache-busted URL after an update) must not throw.
+if (!customElements.get("ll-strategy-notification-lights")) {
+  customElements.define("ll-strategy-notification-lights", NotificationLightsStrategy);
+}

@@ -3,7 +3,7 @@
   "name": "Notification Lights",
   "codeowners": ["@scotttimmins"],
   "config_flow": true,
-  "dependencies": ["http", "frontend"],
+  "dependencies": ["http", "frontend", "websocket_api"],
   "after_dependencies": ["aqara_advanced_lighting"],
   "documentation": "https://github.com/scotttimmins/notification_lights",
   "integration_type": "service",

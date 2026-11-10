@@ -14,9 +14,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 
 from .const import DOMAIN
-from .guide import build_guide
+from .footprint import FOOTPRINTS, slots_of
+from .guide import build_guide, ring_svg
 
 GUIDE_PATH = f"/api/{DOMAIN}/guide"
+RING_PATH = f"/api/{DOMAIN}/ring"
 EVENT_PRINT_SHEET = f"{DOMAIN}_print_sheet"
 LINK_LIFETIME = timedelta(minutes=10)
 
@@ -47,6 +49,45 @@ class GuideView(HomeAssistantView):
     async def get(self, request: web.Request) -> web.Response:
         """Return the printable page."""
         return web.Response(text=render_guide(request.app[KEY_HASS]), content_type="text/html")
+
+
+class RingView(HomeAssistantView):
+    """Draw a footprint's ring as an icon, for the dashboard tile.
+
+    Public on purpose: an image tag cannot send a login header, and the picture carries
+    only a shape and a colour (no names), both given in the URL.
+    """
+
+    url = RING_PATH
+    name = f"api:{DOMAIN}:ring"
+    requires_auth = False
+
+    async def get(self, request: web.Request) -> web.Response:
+        """Return the SVG for ?f=<footprint>&c=<rrggbb>."""
+        footprint = request.query.get("f", "")
+        colour = request.query.get("c", "")
+        if footprint not in FOOTPRINTS or len(colour) != 6:
+            return web.Response(status=400)
+        try:
+            rgb = [int(colour[i : i + 2], 16) for i in (0, 2, 4)]
+        except ValueError:
+            return web.Response(status=400)
+        return web.Response(
+            text=ring_svg(slots_of(footprint), rgb, icon=True), content_type="image/svg+xml"
+        )
+
+
+def ring_url(footprint: str, rgb: list[int]) -> str:
+    """Return the icon URL for a footprint in a colour.
+
+    Args:
+        footprint: One of FOOTPRINTS.
+        rgb: [r, g, b].
+
+    Returns:
+        A path under /api/notification_lights/ring.
+    """
+    return f"{RING_PATH}?f={footprint}&c={rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
 
 async def async_print_sheet(hass: HomeAssistant, notify: bool = False) -> dict[str, Any]:
