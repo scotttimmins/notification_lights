@@ -46,11 +46,12 @@ def notification(name, priority, footprint, scope="house", **extra):
     }
 
 
-async def setup(hass, *notifications):
-    hass.states.async_set("light.bed_rgb", "off")
+async def setup(hass, *notifications, light="off"):
+    hass.states.async_set("light.bed_rgb", light)
     hass.states.async_set("binary_sensor.door", "off")
     entry = MockConfigEntry(
         domain=DOMAIN,
+        entry_id="e1",
         data={},
         version=3,
         subentries_data=[
@@ -181,6 +182,18 @@ async def test_dismissal_survives_a_reload(hass):
     await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.runtime_data.notifications["n0"].dismissed
+
+
+async def test_light_painted_before_an_outage_is_cleared_once_the_source_is_off(hass, hass_storage):
+    """Why: a notification that ended while HA was down must not stay lit on the ring."""
+    async_mock_service(hass, "aqara_advanced_lighting", "set_segment_pattern")
+    off = async_mock_service(hass, "light", "turn_off")
+    hass_storage["notification_lights.e1.dismissed"] = {
+        "version": 1,
+        "data": {"dismissed": [], "painted": ["light.bed_rgb"]},
+    }
+    await setup(hass, notification("Door", 1, "whole"), light="on")
+    assert off  # source was off at start, so the stale pattern is removed
 
 
 async def test_dashboard_model_comes_from_the_registry_in_priority_order(hass, hass_ws_client):

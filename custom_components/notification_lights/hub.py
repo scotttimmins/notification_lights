@@ -295,7 +295,7 @@ class Hub:
         self._unsubs: list[CALLBACK_TYPE] = []
         self._light_previews: dict[str, CALLBACK_TYPE] = {}
         self._preview_lights: set[str] = set()
-        self._painted: dict[str, list[dict[str, Any]]] = {}
+        self._painted: dict[str, list[dict[str, Any]] | None] = {}
         self._task: Any = None
         self._again = False
         self._applied: Any = None
@@ -318,7 +318,10 @@ class Hub:
     async def async_start(self) -> None:
         """Load the stored items, start following sources and draw the first frame."""
         self._applied = self._snapshot()
-        dismissed = set((await self._store.async_load() or {}).get("dismissed", []))
+        saved = await self._store.async_load() or {}
+        dismissed = set(saved.get("dismissed", []))
+        # Lights left painted before a restart: None = unverified, cleared once sources settle.
+        self._painted = {entity: None for entity in saved.get("painted", [])}
         for item_id, data in self._items(KIND_NOTIFICATION).items():
             self.notifications[item_id] = NotificationRuntime(
                 self, item_id, data, item_id in dismissed
@@ -336,16 +339,19 @@ class Hub:
 
     def _dismissed_data(self) -> dict[str, list[str]]:
         """The ids of dismissed notifications, as stored."""
-        return {"dismissed": [i for i, n in self.notifications.items() if n._keep_dismissed]}
+        return {
+            "dismissed": [i for i, n in self.notifications.items() if n._keep_dismissed],
+            "painted": list(self._painted),
+        }
 
     @callback
     def save_dismissed(self) -> None:
-        """Remember dismissals so a restart or reload does not bring a notification back."""
+        """Remember dismissals and painted lights across a restart or reload."""
         self._store.async_delay_save(self._dismissed_data, 1)
 
     async def async_stop(self) -> None:
         """Stop following sources and put the lights back."""
-        await self._store.async_save(self._dismissed_data())
+        dismissed = self._dismissed_data()["dismissed"]
         for runtime in self.notifications.values():
             runtime.async_stop()
         for unsub in self._unsubs:
@@ -357,6 +363,7 @@ class Hub:
         self.notifications.clear()
         self._preview_lights.clear()
         await self._render_once()
+        await self._store.async_save({"dismissed": dismissed, "painted": list(self._painted)})
 
     def is_applied(self) -> bool:
         """Whether the entry's data and subentries are already what is running.
@@ -494,8 +501,15 @@ class Hub:
                 blocking=True,
             )
             self._painted[entity] = pattern
+            self.save_dismissed()
         elif painted:
+            # shortcut: a source stuck unknown keeps a stale light lit, until it reports or reloads
+            if self._painted[entity] is None and any(
+                n._raw is None for n in self.notifications.values()
+            ):
+                return
             del self._painted[entity]
+            self.save_dismissed()
             if light[CONF_IDLE_POLICY] == IDLE_RESTORE and self.hass.states.get(snapshot):
                 await self.hass.services.async_call(
                     "scene", "turn_on", {"entity_id": snapshot}, blocking=True
