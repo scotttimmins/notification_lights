@@ -15,6 +15,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: pip install pytest-homeassistant-custom-component
+      - run: pip install pytest-homeassistant-custom-component home-assistant-frontend
       - run: pytest tests
       - run: node tests/strategy_test.js

@@ -78,7 +78,8 @@ async def setup(hass, *notifications, light="off"):
 
 async def test_follows_source_and_clears(hass):
     paint = async_mock_service(hass, "aqara_advanced_lighting", "set_segment_pattern")
-    off = async_mock_service(hass, "light", "turn_off")
+    off = []
+    hass.bus.async_listen("call_service", lambda e: off.append(e) if (e.data["domain"], e.data["service"]) == ("light", "turn_off") else None)
     await setup(hass, notification("Door", 1, "eighth_1"))
     assert not paint
 
@@ -114,6 +115,7 @@ async def test_dismiss_lasts_until_source_restarts(hass):
     entry.runtime_data.dismiss_all()
     await hass.async_block_till_done()
     hass.states.async_set("binary_sensor.door", "off")
+    await hass.async_block_till_done()
     hass.states.async_set("binary_sensor.door", "on")
     await hass.async_block_till_done()
     assert len(paint) == 2  # shown again after the source restarted
@@ -166,6 +168,7 @@ async def test_unknown_source_does_not_end_a_dismissal(hass):
         await hass.async_block_till_done()
     assert entry.runtime_data.notifications["n0"].dismissed
     hass.states.async_set("binary_sensor.door", "off")
+    await hass.async_block_till_done()
     hass.states.async_set("binary_sensor.door", "on")
     await hass.async_block_till_done()
     assert not entry.runtime_data.notifications["n0"].dismissed
@@ -187,7 +190,9 @@ async def test_dismissal_survives_a_reload(hass):
 async def test_light_painted_before_an_outage_is_cleared_once_the_source_is_off(hass, hass_storage):
     """Why: a notification that ended while HA was down must not stay lit on the ring."""
     async_mock_service(hass, "aqara_advanced_lighting", "set_segment_pattern")
-    off = async_mock_service(hass, "light", "turn_off")
+    async_mock_service(hass, "light", "turn_off")  # at start the light component is not loaded yet
+    off = []
+    hass.bus.async_listen("call_service", lambda e: off.append(e) if (e.data["domain"], e.data["service"]) == ("light", "turn_off") else None)
     hass_storage["notification_lights.e1.dismissed"] = {
         "version": 1,
         "data": {"dismissed": [], "painted": ["light.bed_rgb"]},
