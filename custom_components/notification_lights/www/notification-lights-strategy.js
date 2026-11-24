@@ -129,6 +129,36 @@ class NotificationLightsStrategy extends HTMLElement {
           "| selectattr('state', 'eq', 'on') | list | count }}** showing now",
       },
     ];
+    // Active list: one row per notification, shown only while it is showing.
+    for (const n of notifications) {
+      if (!n.active) continue;
+      const row = [
+        {
+          type: "tile",
+          entity: n.colour || n.active,
+          name: `${n.priority}. ${n.name}`,
+          show_entity_picture: Boolean(n.colour),
+          icon: "mdi:bell-ring",
+          tap_action: { action: "more-info" },
+          state_content: ["status"],
+        },
+      ];
+      if (n.dismiss) {
+        row.push({
+          type: "button",
+          entity: n.dismiss,
+          name: "Dismiss",
+          icon: "mdi:bell-off",
+          show_state: false,
+          tap_action: press(n.dismiss),
+        });
+      }
+      overview.push({
+        type: "conditional",
+        conditions: [{ condition: "state", entity: n.active, state: "on" }],
+        card: { type: "horizontal-stack", cards: row },
+      });
+    }
     if (dismissAll) {
       overview.push({
         type: "button",

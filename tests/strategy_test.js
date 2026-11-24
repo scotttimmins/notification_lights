@@ -56,6 +56,11 @@ sandbox.setTimeout = (fn) => fn();
   // One tap must press: every Preview/Dismiss button has a press action (no more-info popup).
   const rows = view.sections.flatMap((s) => s.cards).filter((c) => c.type === "vertical-stack").flatMap((c) => c.cards[1].entities).filter((r) => r.type === "buttons").flatMap((r) => r.entities);
   assert(rows.length === 16 && rows.every((b) => b.tap_action.perform_action === "button.press" && b.tap_action.target.entity_id === b.entity), "buttons press in one tap");
+  // Active list: a live conditional per notification, so a row appears only while it is showing, with a one-tap dismiss.
+  const active = view.sections[0].cards.filter((c) => c.type === "conditional");
+  assert(active.length === 8 && active.every((c) => c.conditions[0].state === "on"), "one active-only row per notification");
+  const fire = active.find((c) => c.card.cards[0].name === "1. Fire");
+  assert(fire.card.cards[1].tap_action.perform_action === "button.press" && fire.card.cards[1].tap_action.target.entity_id === fire.card.cards[1].entity, "active row dismiss presses in one tap");
   assert(flat.includes("button.print_guide"), "print guide button");
   assert(flat.includes("button.dismiss_all") && flat.includes("button.bed_cal"), "dismiss all and lights present");
   const empty = await Strategy.generate({ title: "X" }, { callWS: async () => ({ notifications: [], lights: [], dismiss_all: null, print_guide: null }) });
